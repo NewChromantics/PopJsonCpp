@@ -173,7 +173,8 @@ struct JsonParser final
 			{
 				encode_utf8(last_escaped_codepoint, out);
 				//return out;
-				return Value_t( ValueType_t::String, StartPosition, i-StartPosition );
+				auto End = i-1;
+				return Value_t( ValueType_t::String, StartPosition, End-StartPosition );
 			}
 
             if (in_range(ch, 0, 0x1f))
