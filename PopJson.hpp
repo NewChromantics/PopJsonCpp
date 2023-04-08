@@ -16,7 +16,8 @@
 
 #include <vector>
 #include <string_view>
-
+//#include <span>
+#include "../std_span.hpp"
 
 namespace PopJson
 {
@@ -55,22 +56,25 @@ public:
 	{
 	}
 
-	int					GetInteger();
+	int					GetInteger(std::string_view JsonData);
 	double				GetDouble();
 	float				GetFloat();
-	std::string_view	GetStringUnescaped();	//	unescaped string, zero cost
-	bool				IsStringEscaped();		//	can the raw string be used?
-	std::string			GetString();			//	get an escaped string, but at a cost
+	std::string_view	GetString(std::string& Buffer);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
+	std::string			GetString();					//	get an escaped string (even if it doesnt need it)
 	bool				GetBool();
 
-	Value_t				GetValue(std::string_view Key);	//	object element
-	Value_t				GetValue(size_t Index);			//	array element
+	Value_t&			GetValue(std::string_view Key,std::string_view JsonData);	//	object element
+	Value_t&			GetValue(size_t Index,std::string_view JsonData);			//	array element
 
 	bool				HasKey(std::string_view Key);
 	
 	//	common helpers
 	void				GetArray(std::vector<int>& Integers);
 	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
+	std::span<Node_t>	GetChildren()	{	return std::span( mNodes.data(), mNodes.size() );	}
+
+private:
+	std::string_view	GetRawString(std::string_view JsonData);
 
 private:
 	ValueType_t::Type	mType = ValueType_t::Undefined;
@@ -85,23 +89,25 @@ public:
 };
 
 
-class PopJson::Node_t
+class PopJson::Node_t : public Value_t
 {
 public:
 	Node_t(){};
 	//	expect key to be a string, but doesn't have to be?
 	Node_t(Value_t Key,Value_t Value) :
+		Value_t			( Value ),
 		mKeyPosition	( Key.mPosition ),
 		mKeyLength		( Key.mLength )
 	{
 	}
 	Node_t(Value_t Value) :
-		mValue	( Value )
+		Value_t	( Value )
 	{
 	}
+	
+	std::string_view	GetKey(std::string_view JsonData);
 
 public:
 	size_t		mKeyPosition = 0;
 	size_t		mKeyLength = 0;
-	Value_t		mValue;
 };

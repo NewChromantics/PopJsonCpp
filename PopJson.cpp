@@ -1,7 +1,9 @@
 #include "PopJson.hpp"
 #include <string>
+#include <charconv>
 
 using namespace PopJson;
+
 
 static inline std::string esc(char c)
 {
@@ -380,7 +382,7 @@ struct JsonParser final
 
 		bool IsDecimal = str[i] == '.';
 		{
-			bool IsExponentChar = str[i] == 'e' || str[i] != 'E';
+			bool IsExponentChar = str[i] == 'e' || str[i] == 'E';
 			if ( !IsDecimal && !IsExponentChar && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
 			{
 				Value_t Value( ValueType_t::NumberInteger, start_pos, i-start_pos );
@@ -558,3 +560,42 @@ PopJson::Value_t::Value_t(std::string_view Json)
 	*this = Root;
 }
 
+int PopJson::Value_t::GetInteger(std::string_view JsonData)
+{
+	if ( mType != PopJson::ValueType_t::NumberInteger )
+		throw std::runtime_error("todo: conversion of value to integer");
+	
+	auto ValueString = GetRawString( JsonData );
+
+	int Value = 0;
+	auto result = std::from_chars( ValueString.data(), ValueString.data() + ValueString.size(), Value );
+	if ( result.ec == std::errc::invalid_argument || result.ec == std::errc::result_out_of_range )
+		throw std::runtime_error("Failed to convert" + std::string(ValueString) + " to int");
+
+	return Value;
+}
+
+std::string_view PopJson::Value_t::GetRawString(std::string_view JsonData)
+{
+	auto String = JsonData.substr( mPosition, mLength );
+	return String;
+}
+
+
+PopJson::Value_t& PopJson::Value_t::GetValue(std::string_view Key,std::string_view JsonData)
+{
+	for ( auto& Child : mNodes )
+	{
+		auto ChildKey = Child.GetKey(JsonData);
+		if ( ChildKey == Key )
+			return Child;
+	}
+	//	throw or undefined?
+	//return Value_t( PopJson::ValueType_t::Undefined, 0, 0 );
+	throw std::runtime_error("No key named " + std::string(Key));
+}
+
+std::string_view PopJson::Node_t::GetKey(std::string_view JsonData)
+{
+	return JsonData.substr( mKeyPosition, mKeyLength );
+}
