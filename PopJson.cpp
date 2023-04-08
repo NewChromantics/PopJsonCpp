@@ -14,6 +14,29 @@ static inline std::string esc(char c)
 	return std::string(buf);
 }
 
+//	input is the second part of \X
+static char GetEscapedChar(char SlashChar)
+{
+	switch ( SlashChar )
+	{
+		case 'b':	return '\b';
+		case 'f':	return '\f';
+		case 'n':	return '\n';
+		case 'r':	return '\r';
+		case 't':	return '\t';
+			
+		case '"':
+		case '\\':
+		case '/':
+			return SlashChar;
+			
+		default:
+			break;
+	}
+
+	throw std::runtime_error("invalid escape character " + esc(SlashChar));
+}
+
 static inline bool in_range(long x, long lower, long upper) {
 	return (x >= lower && x <= upper);
 }
@@ -254,6 +277,80 @@ struct JsonParser final
         }
     }
 
+	Value_t parse_string_faster()
+	{
+		long last_escaped_codepoint = -1;
+		auto StartPosition = i;
+		
+		while (true)
+		{
+			if (i == str.size())
+				throw std::runtime_error("unexpected end of input in string");
+
+			char ch = str[i++];
+
+			if (ch == '"')
+			{
+				auto End = i-1;
+				return Value_t( ValueType_t::String, StartPosition, End-StartPosition );
+			}
+
+			if (in_range(ch, 0, 0x1f))
+				throw std::runtime_error("unescaped " + esc(ch) + " in string");
+
+			// The usual case: non-escaped characters
+			if (ch != '\\')
+			{
+				last_escaped_codepoint = -1;
+				continue;
+			}
+
+			// Handle escapes
+			if ( i == str.size() )
+				throw std::runtime_error("unexpected end of input in string");
+
+			ch = str[i++];
+
+			if (ch == 'u')
+			{
+				// Extract 4-byte escape sequence
+				auto esc = str.substr(i, 4);
+				// Explicitly check length of the substring. The following loop
+				// relies on std::string returning the terminating NUL when
+				// accessing str[length]. Checking here reduces brittleness.
+				if (esc.length() < 4)
+					throw std::runtime_error("bad \\u escape: " + std::string(esc));
+
+				for (size_t j = 0; j < 4; j++)
+				{
+					if ( !in_rangeHex(esc[j]) )
+						throw std::runtime_error("bad \\u escape: " + std::string(esc));
+				}
+
+				long codepoint = strtol( std::string(esc).data(), nullptr, 16);
+
+				// JSON specifies that characters outside the BMP shall be encoded as a pair
+				// of 4-hex-digit \u escapes encoding their surrogate pair components. Check
+				// whether we're in the middle of such a beast: the previous codepoint was an
+				// escaped lead (high) surrogate, and this is a trail (low) surrogate.
+				if (in_range(last_escaped_codepoint, 0xD800, 0xDBFF)
+						&& in_range(codepoint, 0xDC00, 0xDFFF)) {
+					// Reassemble the two surrogate pairs into one astral-plane character, per
+					// the UTF-16 algorithm.
+					last_escaped_codepoint = -1;
+				} else {
+					last_escaped_codepoint = codepoint;
+				}
+
+				i += 4;
+				continue;
+			}
+
+			last_escaped_codepoint = -1;
+			//	will throw if not valid
+			auto EscapedChar = GetEscapedChar(ch);
+		}
+	}
 
 	Value_t parse_number()
 	{
@@ -370,7 +467,7 @@ struct JsonParser final
 			return expect("null", ValueType_t::Null );
 
 		if (ch == '"')
-			return parse_string();
+			return parse_string_faster();
 
 		if (ch == '{')
 		{
@@ -389,7 +486,7 @@ struct JsonParser final
 				if (ch != '"')
 					throw std::runtime_error("expected '\"' in object, got " + esc(ch));
 
-				auto Key = parse_string();
+				auto Key = parse_string_faster();
 				
 				ch = get_next_token();
 				if (ch != ':')
