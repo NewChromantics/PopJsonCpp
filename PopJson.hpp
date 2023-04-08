@@ -20,9 +20,8 @@
 
 namespace PopJson
 {
-	class ObjectView;
 	class Node_t;
-	class ValueView_t;
+	class Value_t;
 
 	namespace ValueType_t
 	{
@@ -43,42 +42,67 @@ namespace PopJson
 }
 
 
-class PopJson::ValueView_t
+class PopJson::Value_t
 {
+	friend class Node_t;
 public:
-	ValueView_t(){}
-	ValueView_t(ValueType_t::Type Type,size_t Position,size_t Length=0) :
+	Value_t(){}
+	Value_t(std::string_view Json);		//	parser
+	Value_t(ValueType_t::Type Type,size_t Position,size_t Length) :
 		mType		( Type ),
 		mPosition	( Position ),
 		mLength		( Length )
 	{
 	}
 
-	void				SetEnd(size_t EndPosition)	{	mLength = EndPosition - mPosition;	}
+	int					GetInteger();
+	double				GetDouble();
+	float				GetFloat();
+	std::string_view	GetStringUnescaped();	//	unescaped string, zero cost
+	bool				IsStringEscaped();		//	can the raw string be used?
+	std::string			GetString();			//	get an escaped string, but at a cost
+	bool				GetBool();
+
+	Value_t				GetValue(std::string_view Key);	//	object element
+	Value_t				GetValue(size_t Index);			//	array element
+
+	bool				HasKey(std::string_view Key);
 	
+	//	common helpers
+	void				GetArray(std::vector<int>& Integers);
+	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
+	
+
+private:
 	ValueType_t::Type	mType = ValueType_t::Undefined;
 
+protected:
 	size_t				mPosition = 0;
 	size_t				mLength = 0;
 	
+public:
 	//	if an array, empty keys
 	std::vector<Node_t>	mNodes;
 };
 
+
 class PopJson::Node_t
 {
 public:
-	size_t				mKeyPosition = 0;
-	size_t				mKeyLength = 0;
-	ValueView_t			mValue;
-};
+	Node_t(){};
+	//	expect key to be a string, but doesn't have to be?
+	Node_t(Value_t Key,Value_t Value) :
+		mKeyPosition	( Key.mPosition ),
+		mKeyLength		( Key.mLength )
+	{
+	}
+	Node_t(Value_t Value) :
+		mValue	( Value )
+	{
+	}
 
-//	this is essentially a js object
-class PopJson::ObjectView
-{
 public:
-	ObjectView(std::string_view Json);		//	parse
-
-private:
-	ValueView_t	mRoot;
+	size_t		mKeyPosition = 0;
+	size_t		mKeyLength = 0;
+	Value_t		mValue;
 };

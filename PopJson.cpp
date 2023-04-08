@@ -156,7 +156,7 @@ struct JsonParser final
      *
      * Parse a string, starting at the current position.
      */
-    ValueView_t parse_string()
+	Value_t parse_string()
 	{
         std::string out;
         long last_escaped_codepoint = -1;
@@ -173,7 +173,7 @@ struct JsonParser final
 			{
 				encode_utf8(last_escaped_codepoint, out);
 				//return out;
-				return ValueView_t( ValueType_t::String, StartPosition, i-StartPosition );
+				return Value_t( ValueType_t::String, StartPosition, i-StartPosition );
 			}
 
             if (in_range(ch, 0, 0x1f))
@@ -257,7 +257,7 @@ struct JsonParser final
      *
      * Parse a double.
      */
-	ValueView_t parse_number()
+	Value_t parse_number()
 	{
         size_t start_pos = i;
 
@@ -286,7 +286,7 @@ struct JsonParser final
         if (str[i] != '.' && str[i] != 'e' && str[i] != 'E'
                 && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
 		{
-			ValueView_t Value( ValueType_t::NumberInteger, start_pos, i-start_pos );
+			Value_t Value( ValueType_t::NumberInteger, start_pos, i-start_pos );
             //return std::atoi(str.c_str() + start_pos);
 			return Value;
         }
@@ -316,7 +316,7 @@ struct JsonParser final
                 i++;
         }
 
-		ValueView_t Value( ValueType_t::NumberDouble, start_pos, i-start_pos );
+		Value_t Value( ValueType_t::NumberDouble, start_pos, i-start_pos );
         //return std::strtod(str.c_str() + start_pos, nullptr);
 		return Value;
     }
@@ -326,7 +326,7 @@ struct JsonParser final
      * Expect that 'str' starts at the character that was just read. If it does, advance
      * the input and return res. If not, flag an error.
      */
-	ValueView_t expect(std::string_view expected,ValueType_t::Type ResultType)
+	Value_t expect(std::string_view expected,ValueType_t::Type ResultType)
 	{
 		if ( i <= 0 )
 			throw std::runtime_error("Bad position");
@@ -338,7 +338,7 @@ struct JsonParser final
 			throw std::runtime_error("parse error: expected " + std::string(expected) + ", got " + std::string(FoundString) );
 		}
 		
-		ValueView_t Result( ResultType, i, expected.length() );
+		Value_t Result( ResultType, i, expected.length() );
 		i += expected.length();
         return Result;
     }
@@ -347,7 +347,7 @@ struct JsonParser final
      *
      * Parse a JSON object.
      */
-	ValueView_t parse_json(int depth)
+	Value_t parse_json(int depth)
 	{
         if (depth > max_depth)
 			throw std::runtime_error("exceeded maximum nesting depth");
@@ -374,31 +374,30 @@ struct JsonParser final
 
         if (ch == '{')
 		{
-			ValueView_t Object( ValueType_t::Object, i );
+			auto StartPosition = i;
 			
 			ch = get_next_token();
 			if (ch == '}')
 			{
-				Object.SetEnd(i);
+				Value_t Object( ValueType_t::Object, StartPosition, i-StartPosition );
 				return Object;
 			}
 
+			std::vector<Node_t> Nodes;
 			while (1)
 			{
-				auto& Node = Object.mNodes.emplace_back();
-				
 				if (ch != '"')
 					throw std::runtime_error("expected '\"' in object, got " + esc(ch));
 
 				auto Key = parse_string();
-				Node.mKeyPosition = Key.mPosition;
-				Node.mKeyLength = Key.mLength;
-
+				
 				ch = get_next_token();
 				if (ch != ':')
 					throw std::runtime_error("expected ':' in object, got " + esc(ch));
 
-				Node.mValue = parse_json( depth + 1 );
+				auto Value = parse_json( depth + 1 );
+				
+				Nodes.push_back( Node_t( Key, Value ) );
 
 				ch = get_next_token();
 				if (ch == '}')
@@ -408,28 +407,32 @@ struct JsonParser final
 
 				ch = get_next_token();
 			}
+			
+			Value_t Object( ValueType_t::Object, StartPosition, i );
+			Object.mNodes = std::move(Nodes);
 			return Object;
 		}
 
         if (ch == '[')
 		{
-			ValueView_t Array( ValueType_t::Array, i );
+			auto StartPosition = i;
 			
 			ch = get_next_token();
 			if (ch == ']')
 			{
-				Array.SetEnd(i);
+				Value_t Array( ValueType_t::Array, StartPosition, i );
 				return Array;
 			}
 
+			std::vector<Node_t> Nodes;
 			while (1)
 			{
 				i--;
 
-				Node_t Node;
-				Node.mValue = parse_json(depth + 1);
-				//	no key for array items
-				Array.mNodes.push_back(Node);
+				auto Value = parse_json(depth + 1);
+				
+				Node_t Node(Value);
+				Nodes.push_back(Node);
 
 				ch = get_next_token();
 				if (ch == ']')
@@ -439,6 +442,9 @@ struct JsonParser final
 
 				ch = get_next_token();
 			}
+			
+			Value_t Array( ValueType_t::Array, StartPosition, i-StartPosition );
+			Array.mNodes = std::move(Nodes);
 			return Array;
 		}
 
@@ -446,10 +452,12 @@ struct JsonParser final
 	}
 };
 
-PopJson::ObjectView::ObjectView(std::string_view Json)
+
+PopJson::Value_t::Value_t(std::string_view Json)
 {
 	bool AllowComments = false;
 	JsonParser parser( Json, AllowComments );
-	mRoot = parser.parse_json(0);
+	auto Root = parser.parse_json(0);
+	*this = Root;
 }
 
