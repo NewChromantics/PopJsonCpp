@@ -71,7 +71,6 @@ public:
 	//	common helpers
 	void				GetArray(std::vector<int>& Integers);
 	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
-	
 
 private:
 	ValueType_t::Type	mType = ValueType_t::Undefined;

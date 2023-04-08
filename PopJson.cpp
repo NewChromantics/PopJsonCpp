@@ -253,73 +253,74 @@ struct JsonParser final
         }
     }
 
-    /* parse_number()
-     *
-     * Parse a double.
-     */
+
 	Value_t parse_number()
 	{
-        size_t start_pos = i;
+		size_t start_pos = i;
 
-        if (str[i] == '-')
-            i++;
+		if (str[i] == '-')
+			i++;
 
-        // Integer part
-        if (str[i] == '0')
+		//	Integer part
+		if (str[i] == '0')
 		{
-            i++;
-            if (in_range(str[i], '0', '9'))
+			i++;
+			if (in_range(str[i], '0', '9'))
 				throw std::runtime_error("leading 0s not permitted in numbers");
 			
-        }
+		}
 		else if (in_range(str[i], '1', '9'))
 		{
-            i++;
-            while (in_range(str[i], '0', '9'))
-                i++;
-        }
+			i++;
+			while (in_range(str[i], '0', '9'))
+				i++;
+		}
 		else
 		{
 			throw std::runtime_error("invalid " + esc(str[i]) + " in number");
-        }
+		}
 
-        if (str[i] != '.' && str[i] != 'e' && str[i] != 'E'
-                && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
+		bool IsDecimal = str[i] == '.';
 		{
-			Value_t Value( ValueType_t::NumberInteger, start_pos, i-start_pos );
-            //return std::atoi(str.c_str() + start_pos);
-			return Value;
-        }
-
-        // Decimal part
-        if (str[i] == '.')
+			bool IsExponentChar = str[i] == 'e' || str[i] != 'E';
+			if ( !IsDecimal && !IsExponentChar && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
+			{
+				Value_t Value( ValueType_t::NumberInteger, start_pos, i-start_pos );
+				//return std::atoi(str.c_str() + start_pos);
+				return Value;
+			}
+		}
+		
+		//	verify decimal part
+		if ( IsDecimal )
 		{
-            i++;
-            if (!in_range(str[i], '0', '9'))
+			i++;
+			if (!in_range(str[i], '0', '9'))
 				throw std::runtime_error("at least one digit required in fractional part");
 
-            while (in_range(str[i], '0', '9'))
-                i++;
-        }
+			while (in_range(str[i], '0', '9'))
+				i++;
+		}
 
-        // Exponent part
-        if (str[i] == 'e' || str[i] == 'E') {
-            i++;
+		//	verify exponent part
+		if (str[i] == 'e' || str[i] == 'E')
+		{
+			i++;
 
-            if (str[i] == '+' || str[i] == '-')
-                i++;
+			if (str[i] == '+' || str[i] == '-')
+				i++;
 
-            if (!in_range(str[i], '0', '9'))
+			if (!in_range(str[i], '0', '9'))
 				throw std::runtime_error("at least one digit required in exponent");
 
-            while (in_range(str[i], '0', '9'))
-                i++;
-        }
+			while (in_range(str[i], '0', '9'))
+				i++;
+		}
 
 		Value_t Value( ValueType_t::NumberDouble, start_pos, i-start_pos );
-        //return std::strtod(str.c_str() + start_pos, nullptr);
+		//return std::strtod(str.c_str() + start_pos, nullptr);
 		return Value;
-    }
+	}
 
     /* expect(str, res)
      *
@@ -331,48 +332,46 @@ struct JsonParser final
 		if ( i <= 0 )
 			throw std::runtime_error("Bad position");
 		
-        i--;
-        if (str.compare(i, expected.length(), expected) != 0)
+		i--;
+		auto Slice = str.substr( i, expected.length() );
+		//if ( str.compare(i, expected.length(), expected) != 0)
+		if ( Slice != expected )
 		{
-			auto FoundString = str.substr(i, expected.length());
-			throw std::runtime_error("parse error: expected " + std::string(expected) + ", got " + std::string(FoundString) );
+			throw std::runtime_error("parse error: expected " + std::string(expected) + ", got " + std::string(Slice) );
 		}
 		
 		Value_t Result( ResultType, i, expected.length() );
 		i += expected.length();
-        return Result;
-    }
+		return Result;
+	}
 
-    /* parse_json()
-     *
-     * Parse a JSON object.
-     */
+
 	Value_t parse_json(int depth)
 	{
-        if (depth > max_depth)
+		if (depth > max_depth)
 			throw std::runtime_error("exceeded maximum nesting depth");
 
-        char ch = get_next_token();
+		char ch = get_next_token();
 
-        if (ch == '-' || (ch >= '0' && ch <= '9'))
+		if (ch == '-' || (ch >= '0' && ch <= '9'))
 		{
-            i--;
-            return parse_number();
-        }
+			i--;
+			return parse_number();
+		}
 
-        if (ch == 't')
-            return expect("true", ValueType_t::BooleanTrue );
+		if (ch == 't')
+			return expect("true", ValueType_t::BooleanTrue );
 
-        if (ch == 'f')
-            return expect("false", ValueType_t::BooleanFalse );
+		if (ch == 'f')
+			return expect("false", ValueType_t::BooleanFalse );
 
-        if (ch == 'n')
+		if (ch == 'n')
 			return expect("null", ValueType_t::Null );
 
-        if (ch == '"')
-            return parse_string();
+		if (ch == '"')
+			return parse_string();
 
-        if (ch == '{')
+		if (ch == '{')
 		{
 			auto StartPosition = i;
 			
@@ -413,7 +412,7 @@ struct JsonParser final
 			return Object;
 		}
 
-        if (ch == '[')
+		if (ch == '[')
 		{
 			auto StartPosition = i;
 			
