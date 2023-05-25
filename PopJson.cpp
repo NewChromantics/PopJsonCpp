@@ -559,6 +559,21 @@ PopJson::Value_t::Value_t(std::string_view Json)
 	*this = Root;
 }
 
+std::string PopJson::Value_t::GetString(std::string_view JsonData)
+{
+	auto EscapedString = GetRawString(JsonData);
+	//	todo: decode escaped
+	return std::string(EscapedString);
+}
+
+std::string_view PopJson::Value_t::GetString(std::string_view JsonData,std::string& Buffer)
+{
+	auto EscapedString = GetRawString(JsonData);
+	//	todo: decode escaped
+	return EscapedString;
+}
+
+
 int PopJson::Value_t::GetInteger(std::string_view JsonData)
 {
 	if ( mType != PopJson::ValueType_t::NumberInteger )
@@ -572,6 +587,16 @@ int PopJson::Value_t::GetInteger(std::string_view JsonData)
 		throw std::runtime_error("Failed to convert" + std::string(ValueString) + " to int");
 
 	return Value;
+}
+
+bool PopJson::Value_t::GetBool()
+{
+	if ( mType == PopJson::ValueType_t::BooleanTrue )
+		return true;
+	if ( mType == PopJson::ValueType_t::BooleanFalse )
+		return false;
+	
+	throw std::runtime_error("todo: conversion of value to bool");
 }
 
 std::string_view PopJson::Value_t::GetRawString(std::string_view JsonData)

@@ -64,7 +64,8 @@ public:
 	float				GetFloat(std::string_view JsonData);
 	std::string_view	GetString(std::string_view JsonData,std::string& Buffer);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
 	std::string			GetString(std::string_view JsonData);					//	get an escaped string (even if it doesnt need it)
-	bool				GetBool(std::string_view JsonData);
+	bool				GetBool(std::string_view JsonData)	{	return GetBool();	}
+	bool				GetBool();
 
 	//	gr: references... should be protected? when does a user need this to be a reference
 	//		value is abstract enough to be copied
