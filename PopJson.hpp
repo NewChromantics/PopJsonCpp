@@ -16,8 +16,7 @@
 
 #include <vector>
 #include <string_view>
-//#include <span>
-#include "../std_span.hpp"
+#include <span>
 #include <shared_mutex>
 
 namespace PopJson
@@ -46,6 +45,26 @@ namespace PopJson
 }
 
 
+class PopJson::Node_t
+{
+public:
+	Node_t(){};
+	//	expect key to be a string, but doesn't have to be?
+	Node_t(Value_t Key,Value_t Value);
+	Node_t(Value_t Value);
+	
+	std::string_view	GetKey(std::string_view JsonData);
+	Value_t				GetValue();
+	
+public:
+	size_t		mKeyPosition = 0;
+	size_t		mKeyLength = 0;
+	size_t		mValuePosition = 0;
+	size_t		mValueLength = 0;
+	ValueType_t::Type	mValueType = ValueType_t::Null;
+};
+
+
 class PopJson::Value_t
 {
 	friend class Node_t;
@@ -62,17 +81,17 @@ public:
 	int					GetInteger(std::string_view JsonData);
 	double				GetDouble(std::string_view JsonData);
 	float				GetFloat(std::string_view JsonData);
-	std::string_view	GetString(std::string_view JsonData,std::string& Buffer);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
+	std::string_view	GetString(std::string& Buffer,std::string_view JsonData);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
 	std::string			GetString(std::string_view JsonData);					//	get an escaped string (even if it doesnt need it)
 	bool				GetBool(std::string_view JsonData)	{	return GetBool();	}
 	bool				GetBool();
 
 	//	gr: references... should be protected? when does a user need this to be a reference
 	//		value is abstract enough to be copied
-	Value_t&			GetValue(std::string_view JsonData,std::string_view Key);	//	object element
-	Value_t&			GetValue(std::string_view JsonData,size_t Index);			//	array element
+	Value_t				GetValue(std::string_view Key,std::string_view JsonData);	//	object element
+	Value_t				GetValue(size_t Index,std::string_view JsonData);			//	array element
 
-	bool				HasKey(std::string_view Key);
+	bool				HasKey(std::string_view Key,std::string_view JsonData);
 	
 	//	common helpers
 	void				GetArray(std::vector<int>& Integers);
@@ -95,28 +114,6 @@ public:
 };
 
 
-class PopJson::Node_t : public Value_t
-{
-public:
-	Node_t(){};
-	//	expect key to be a string, but doesn't have to be?
-	Node_t(Value_t Key,Value_t Value) :
-		Value_t			( Value ),
-		mKeyPosition	( Key.mPosition ),
-		mKeyLength		( Key.mLength )
-	{
-	}
-	Node_t(Value_t Value) :
-		Value_t	( Value )
-	{
-	}
-	
-	std::string_view	GetKey(std::string_view JsonData);
-
-public:
-	size_t		mKeyPosition = 0;
-	size_t		mKeyLength = 0;
-};
 
 
 class PopJson::Json_t : protected Value_t
@@ -163,12 +160,12 @@ public:
 	
 	//	read interface without requiring storage
 	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetJsonString() );	}
-	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetJsonString(), Buffer );	}
+	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetJsonString() );	}
 	std::string			GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetJsonString() );	}
 
-	bool				HasKey(std::string_view Key)	{	return Value_t::HasKey(Key);	}
+	bool				HasKey(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::HasKey( Key, GetJsonString() );	}
 
-	//	gr: this does a copy, we want to change this to return a View_t
+	//	gr: this does a copy, we want to change this to return a View_t?
 	Json_t				GetValue(std::string_view Key);
 
 private:

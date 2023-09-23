@@ -566,7 +566,7 @@ std::string PopJson::Value_t::GetString(std::string_view JsonData)
 	return std::string(EscapedString);
 }
 
-std::string_view PopJson::Value_t::GetString(std::string_view JsonData,std::string& Buffer)
+std::string_view PopJson::Value_t::GetString(std::string& Buffer,std::string_view JsonData)
 {
 	auto EscapedString = GetRawString(JsonData);
 	//	todo: decode escaped
@@ -606,20 +606,52 @@ std::string_view PopJson::Value_t::GetRawString(std::string_view JsonData)
 }
 
 
-PopJson::Value_t& PopJson::Value_t::GetValue(std::string_view Key,std::string_view JsonData)
+PopJson::Value_t PopJson::Value_t::GetValue(std::string_view Key,std::string_view JsonData)
 {
 	for ( auto& Child : mNodes )
 	{
 		auto ChildKey = Child.GetKey(JsonData);
 		if ( ChildKey == Key )
-			return Child;
+			return Child.GetValue();
 	}
 	//	throw or undefined?
 	//return Value_t( PopJson::ValueType_t::Undefined, 0, 0 );
 	throw std::runtime_error("No key named " + std::string(Key));
 }
 
+
+bool PopJson::Value_t::HasKey(std::string_view Key,std::string_view JsonData)
+{
+	for ( auto& Child : mNodes )
+	{
+		auto ChildKey = Child.GetKey(JsonData);
+		if ( ChildKey == Key )
+			return true;
+	}
+	return false;
+}
+
+
 std::string_view PopJson::Node_t::GetKey(std::string_view JsonData)
 {
 	return JsonData.substr( mKeyPosition, mKeyLength );
+}
+
+PopJson::Node_t::Node_t(Value_t Key,Value_t Value) :
+	mValuePosition	( Value.mPosition ),
+	mValueLength	( Value.mLength ),
+	mKeyPosition	( Key.mPosition ),
+	mKeyLength		( Key.mLength )
+{
+}
+
+PopJson::Node_t::Node_t(Value_t Value) :
+	mValuePosition	( Value.mPosition ),
+	mValueLength	( Value.mLength )
+{
+}
+	
+PopJson::Value_t PopJson::Node_t::GetValue()
+{
+	return Value_t( mValueType, mValuePosition, mValueLength );
 }
