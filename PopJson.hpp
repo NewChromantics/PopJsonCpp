@@ -154,7 +154,9 @@ public:
 	void				Set(std::string_view Key,std::string_view Value);
 	void				Set(std::string_view Key,int Value);
 	void				Set(std::string_view Key,size_t Value);
+#if !defined(TARGET_ANDROID)	//	change this to "if size_t == unsigned"
 	void				Set(std::string_view Key,unsigned Value);
+#endif
 	void				Set(std::string_view Key,long Value);
 	void				Set(std::string_view Key,bool Value);
 	void				Set(std::string_view Key,const std::vector<Json_t>& Values);
