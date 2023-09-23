@@ -99,6 +99,7 @@ public:
 	void				GetArray(std::vector<int>& Integers);
 	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
 	std::span<Node_t>	GetChildren()	{	return std::span( mNodes.data(), mNodes.size() );	}
+	size_t				GetChildCount()	{	return mNodes.size();	}
 
 private:
 	std::string_view	GetRawString(std::string_view JsonData);
