@@ -1,7 +1,41 @@
 #include "PopJson.hpp"
 #include <string>
 #include <charconv>
+#include <sstream>
 
+
+
+void PopJson::UnitTest()
+{
+	{
+		auto Json = R"JSON( {"Array":[0,1,2,3]} )JSON";
+		Value_t Data( Json );
+		
+		auto ArrayData = Data.GetValue("Array",Json);
+		if ( ArrayData.GetType() != ValueType_t::Array )
+			throw std::runtime_error(".Array not an array");
+		auto Value0 = ArrayData.GetValue( 0, Json ).GetInteger(Json);
+		auto Value1 = ArrayData.GetValue( 1, Json ).GetInteger(Json);
+		auto Value2 = ArrayData.GetValue( 2, Json ).GetInteger(Json);
+		auto Value3 = ArrayData.GetValue( 3, Json ).GetInteger(Json);
+	}
+	
+	{
+		auto Json = R"JSON( {"Array":[{ }]} )JSON";
+		Value_t Data( Json );
+		
+		auto ArrayData = Data.GetValue("Array",Json);
+		if ( ArrayData.GetType() != ValueType_t::Array )
+			throw std::runtime_error(".Array not an array");
+		auto Value0 = ArrayData.GetValue( 0, Json );
+		if ( Value0.GetType() != ValueType_t::Object )
+			throw std::runtime_error(".Array[0] not an object");
+	}
+	
+
+
+	
+}
 
 
 static inline std::string esc(char c)
