@@ -55,7 +55,7 @@ public:
 	Node_t(Value_t Value);
 	
 	std::string_view	GetKey(std::string_view JsonData);
-	Value_t				GetValue();
+	Value_t				GetValue(std::string_view JsonData);
 	
 public:
 	size_t		mKeyPosition = 0;
@@ -71,7 +71,7 @@ class PopJson::Value_t
 	friend class Node_t;
 public:
 	Value_t(){}
-	Value_t(std::string_view Json);		//	parser
+	Value_t(std::string_view Json,size_t WritePositionOffset=0);		//	parser
 	Value_t(ValueType_t::Type Type,size_t Position,size_t Length) :
 		mType		( Type ),
 		mPosition	( Position ),
@@ -79,6 +79,7 @@ public:
 	{
 	}
 
+	ValueType_t::Type	GetType()			{	return mType;	}
 	int					GetInteger(std::string_view JsonData);
 	double				GetDouble(std::string_view JsonData);
 	float				GetFloat(std::string_view JsonData);

@@ -312,7 +312,7 @@ struct JsonParser final
         }
     }
 
-	PopJson::Value_t parse_string_faster()
+	PopJson::Value_t parse_string_faster(size_t WritePositionOffset)
 	{
 		long last_escaped_codepoint = -1;
 		auto StartPosition = i;
@@ -327,7 +327,7 @@ struct JsonParser final
 			if (ch == '"')
 			{
 				auto End = i-1;
-				return PopJson::Value_t( PopJson::ValueType_t::String, StartPosition, End-StartPosition );
+				return PopJson::Value_t( PopJson::ValueType_t::String, StartPosition+WritePositionOffset, End-StartPosition );
 			}
 
 			if (in_range(ch, 0, 0x1f))
@@ -387,7 +387,7 @@ struct JsonParser final
 		}
 	}
 
-	PopJson::Value_t parse_number()
+	PopJson::Value_t parse_number(size_t WritePositionOffset)
 	{
 		size_t start_pos = i;
 
@@ -418,7 +418,7 @@ struct JsonParser final
 			bool IsExponentChar = str[i] == 'e' || str[i] == 'E';
 			if ( !IsDecimal && !IsExponentChar && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
 			{
-				PopJson::Value_t Value( PopJson::ValueType_t::NumberInteger, start_pos, i-start_pos );
+				PopJson::Value_t Value( PopJson::ValueType_t::NumberInteger, start_pos + WritePositionOffset, i-start_pos );
 				//return std::atoi(str.c_str() + start_pos);
 				return Value;
 			}
@@ -450,7 +450,7 @@ struct JsonParser final
 				i++;
 		}
 
-		PopJson::Value_t Value( PopJson::ValueType_t::NumberDouble, start_pos, i-start_pos );
+		PopJson::Value_t Value( PopJson::ValueType_t::NumberDouble, start_pos + WritePositionOffset, i-start_pos );
 		//return std::strtod(str.c_str() + start_pos, nullptr);
 		return Value;
 	}
@@ -460,7 +460,7 @@ struct JsonParser final
      * Expect that 'str' starts at the character that was just read. If it does, advance
      * the input and return res. If not, flag an error.
      */
-	PopJson::Value_t expect(std::string_view expected,PopJson::ValueType_t::Type ResultType)
+	PopJson::Value_t expect(std::string_view expected,PopJson::ValueType_t::Type ResultType,size_t WritePositionOffset)
 	{
 		if ( i <= 0 )
 			throw std::runtime_error("Bad position");
@@ -473,14 +473,16 @@ struct JsonParser final
 			throw std::runtime_error("parse error: expected " + std::string(expected) + ", got " + std::string(Slice) );
 		}
 		
-		PopJson::Value_t Result( ResultType, i, expected.length() );
+		PopJson::Value_t Result( ResultType, i+WritePositionOffset, expected.length() );
 		i += expected.length();
 		return Result;
 	}
 
 
-	PopJson::Value_t parse_json(int depth)
+	PopJson::Value_t parse_json(int depth,size_t WritePositionOffset)
 	{
+		const bool IncludeStartAndEndTokensInValue = false;
+		
 		if (depth > max_depth)
 			throw std::runtime_error("exceeded maximum nesting depth");
 
@@ -489,58 +491,59 @@ struct JsonParser final
 		if (ch == '-' || (ch >= '0' && ch <= '9'))
 		{
 			i--;
-			return parse_number();
+			return parse_number(WritePositionOffset);
 		}
 
 		if (ch == 't')
-			return expect("true", PopJson::ValueType_t::BooleanTrue );
+			return expect("true", PopJson::ValueType_t::BooleanTrue, WritePositionOffset );
 
 		if (ch == 'f')
-			return expect("false", PopJson::ValueType_t::BooleanFalse );
+			return expect("false", PopJson::ValueType_t::BooleanFalse, WritePositionOffset );
 
 		if (ch == 'n')
-			return expect("null", PopJson::ValueType_t::Null );
+			return expect("null", PopJson::ValueType_t::Null, WritePositionOffset );
 
 		if (ch == '"')
-			return parse_string_faster();
+			return parse_string_faster(WritePositionOffset);
 
 		if (ch == '{')
 		{
 			auto StartPosition = i;
 			
 			ch = get_next_token();
-			if (ch == '}')
-			{
-				PopJson::Value_t Object( PopJson::ValueType_t::Object, StartPosition, i-StartPosition );
-				return Object;
-			}
-
-			std::vector<PopJson::Node_t> Nodes;
-			while (1)
-			{
-				if (ch != '"')
-					throw std::runtime_error("expected '\"' in object, got " + esc(ch));
-
-				auto Key = parse_string_faster();
-				
-				ch = get_next_token();
-				if (ch != ':')
-					throw std::runtime_error("expected ':' in object, got " + esc(ch));
-
-				auto Value = parse_json( depth + 1 );
-				
-				Nodes.push_back( PopJson::Node_t( Key, Value ) );
-
-				ch = get_next_token();
-				if (ch == '}')
-					break;
-				if (ch != ',')
-					throw std::runtime_error("expected ',' in object, got " + esc(ch));
-
-				ch = get_next_token();
-			}
 			
-			PopJson::Value_t Object( PopJson::ValueType_t::Object, StartPosition, i );
+			std::vector<PopJson::Node_t> Nodes;
+			if (ch != '}')
+			{
+				while (1)
+				{
+					if (ch != '"')
+						throw std::runtime_error("expected '\"' in object, got " + esc(ch));
+					
+					auto Key = parse_string_faster(WritePositionOffset);
+					
+					ch = get_next_token();
+					if (ch != ':')
+						throw std::runtime_error("expected ':' in object, got " + esc(ch));
+					
+					auto Value = parse_json( depth + 1, WritePositionOffset );
+					
+					Nodes.push_back( PopJson::Node_t( Key, Value ) );
+					
+					ch = get_next_token();
+					if (ch == '}')
+						break;
+					if (ch != ',')
+						throw std::runtime_error("expected ',' in object, got " + esc(ch));
+					
+					ch = get_next_token();
+				}
+			}
+
+			auto ValueStart = StartPosition;
+			auto ValueLength = i-StartPosition-1;
+			auto ValueRaw = str.substr( ValueStart, ValueLength );
+			PopJson::Value_t Object( PopJson::ValueType_t::Object, ValueStart+WritePositionOffset, ValueLength );
 			Object.mNodes = std::move(Nodes);
 			return Object;
 		}
@@ -552,16 +555,16 @@ struct JsonParser final
 			ch = get_next_token();
 			if (ch == ']')
 			{
-				PopJson::Value_t Array( PopJson::ValueType_t::Array, StartPosition, i );
+				PopJson::Value_t Array( PopJson::ValueType_t::Array, StartPosition+WritePositionOffset, i );
 				return Array;
 			}
 
 			std::vector<PopJson::Node_t> Nodes;
-			while (1)
+			while ( true )
 			{
 				i--;
 
-				auto Value = parse_json(depth + 1);
+				auto Value = parse_json(depth + 1, WritePositionOffset);
 				
 				PopJson::Node_t Node(Value);
 				Nodes.push_back(Node);
@@ -575,7 +578,11 @@ struct JsonParser final
 				ch = get_next_token();
 			}
 			
-			PopJson::Value_t Array( PopJson::ValueType_t::Array, StartPosition, i-StartPosition );
+			auto ValueStart = StartPosition;
+			auto ValueLength = i-StartPosition-1;
+			auto ValueRaw = str.substr( ValueStart, ValueLength );
+			
+			PopJson::Value_t Array( PopJson::ValueType_t::Array, ValueStart+WritePositionOffset, ValueLength );
 			Array.mNodes = std::move(Nodes);
 			return Array;
 		}
@@ -585,11 +592,11 @@ struct JsonParser final
 };
 
 
-PopJson::Value_t::Value_t(std::string_view Json)
+PopJson::Value_t::Value_t(std::string_view Json,size_t WritePositionOffset)
 {
 	bool AllowComments = false;
 	JsonParser parser( Json, AllowComments );
-	auto Root = parser.parse_json(0);
+	auto Root = parser.parse_json( 0, WritePositionOffset );
 	*this = Root;
 }
 
@@ -646,11 +653,26 @@ PopJson::Value_t PopJson::Value_t::GetValue(std::string_view Key,std::string_vie
 	{
 		auto ChildKey = Child.GetKey(JsonData);
 		if ( ChildKey == Key )
-			return Child.GetValue();
+			return Child.GetValue(JsonData);
 	}
 	//	throw or undefined?
 	//return Value_t( PopJson::ValueType_t::Undefined, 0, 0 );
 	throw std::runtime_error("No key named " + std::string(Key));
+}
+
+
+PopJson::Value_t PopJson::Value_t::GetValue(size_t Index,std::string_view JsonData)
+{
+	//	gr: should this throw if keys are named? make this only work for arrays?
+	if ( Index >= mNodes.size() )
+	{
+		std::stringstream Error;
+		Error << "Key " << Index << "/" << mNodes.size() << " out of range";
+		throw std::runtime_error( Error.str() );
+	}
+
+	auto& Child = mNodes[Index];
+	return Child.GetValue(JsonData);
 }
 
 
@@ -674,6 +696,7 @@ std::string_view PopJson::Node_t::GetKey(std::string_view JsonData)
 PopJson::Node_t::Node_t(Value_t Key,Value_t Value) :
 	mValuePosition	( Value.mPosition ),
 	mValueLength	( Value.mLength ),
+	mValueType		( Value.mType ),
 	mKeyPosition	( Key.mPosition ),
 	mKeyLength		( Key.mLength )
 {
@@ -681,11 +704,27 @@ PopJson::Node_t::Node_t(Value_t Key,Value_t Value) :
 
 PopJson::Node_t::Node_t(Value_t Value) :
 	mValuePosition	( Value.mPosition ),
-	mValueLength	( Value.mLength )
+	mValueLength	( Value.mLength ),
+	mValueType		( Value.mType )
 {
 }
 	
-PopJson::Value_t PopJson::Node_t::GetValue()
+PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 {
-	return Value_t( mValueType, mValuePosition, mValueLength );
+	Value_t Value( mValueType, mValuePosition, mValueLength );
+
+	//	gr: we've lost all the stuff we've parsed when initially going through the tree
+	//		so we need to re-parse the data...
+	//		we can't really store nodes in nodes, so need a better plan
+	if ( mValueType == ValueType_t::Object || mValueType == ValueType_t::Array )
+	{
+		//	these positions don't include start & end tokens...
+		//	which is difficult as they may not be right before & after...
+		//	need to adjust parser to have fake bits/parse a specific content type
+		auto ValueTokenPosition = mValuePosition-1;
+		auto ValueTokenLength = mValueLength+2;
+		auto NodeJson = JsonData.substr( ValueTokenPosition, ValueTokenLength );
+		Value = Value_t( NodeJson, ValueTokenPosition );
+	}
+	return Value;
 }
