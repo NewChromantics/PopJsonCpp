@@ -152,12 +152,10 @@ public:
 	
 	//	write interface
 	void				Set(std::string_view Key,std::string_view Value);
-	void				Set(std::string_view Key,int Value);
-	void				Set(std::string_view Key,size_t Value);
-#if !defined(TARGET_ANDROID)	//	change this to "if size_t == unsigned"
-	void				Set(std::string_view Key,unsigned Value);
-#endif
-	void				Set(std::string_view Key,long Value);
+	void				Set(std::string_view Key,int32_t Value);
+	void				Set(std::string_view Key,uint32_t Value);
+	void				Set(std::string_view Key,int64_t Value);
+	void				Set(std::string_view Key,uint64_t Value);
 	void				Set(std::string_view Key,bool Value);
 	void				Set(std::string_view Key,const std::vector<Json_t>& Values);
 	void				Set(std::string_view Key,const Json_t& Value);	//	change to accept View_t
