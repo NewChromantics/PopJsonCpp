@@ -23,6 +23,7 @@ namespace PopJson
 {
 	class Value_t;		//	a value is meta to a value to the underlying data, it requires a pointer(view) to the underlying data; a string, or object, or null, number etc, which has child members in case it's an object or an array
 	class Node_t;		//	a node is a Value with a key attached
+	class ViewBase_t;
 	class View_t;		//	a value, but has a view (temporary) pointer to the underlying data
 	class Json_t;		//	a json is a Value but holds onto its own data and supplys views(values), and becomes writable
 
@@ -114,25 +115,60 @@ protected:
 public:
 	//	if an array, empty keys
 	std::vector<Node_t>	mNodes;
+	std::vector<Value_t>	mChildren;
 };
 
 
 
 
-class PopJson::Json_t : protected Value_t
+class PopJson::ViewBase_t : protected Value_t
+{
+public:
+	//	read interface without requiring storage
+	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetStorageString() );	}
+	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetStorageString() );	}
+	std::string			GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetStorageString() );	}
+
+	bool				HasKey(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::HasKey( Key, GetStorageString() );	}
+
+	//	gr: this does a copy, we want to change this to return a View_t?
+	//Value_t				GetValue(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetValue( Key, GetStorageString() );	}
+	View_t				GetValue(std::string_view Key);//	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetValue( Key, GetStorageString() );	}
+
+protected:
+	std::shared_mutex			mStorageLock;		//	not needed in base class, but makes code a lot easier
+	virtual std::string_view	GetStorageString()=0;
+};
+	
+class PopJson::View_t : protected ViewBase_t
+{
+public:
+	View_t(std::string_view Json) :
+		mStorage	( Json )
+	{
+	}
+	
+protected:
+	virtual std::string_view	GetStorageString() override	{	return mStorage;	}
+	std::string_view			mStorage;
+};
+	
+
+
+class PopJson::Json_t : protected ViewBase_t
 {
 public:
 	Json_t(){};
 	Json_t(std::string_view Json);		//	parser
-	Json_t(const Json_t& Copy) :
-		Value_t	( Copy )
+	Json_t(const Json_t& Copy)
 	{
 		mStorage = Copy.mStorage;
+		//*this = Value_t(GetStorageString());
 	}
-	Json_t(Json_t&& Move) :
-		Value_t	( Move )
+	Json_t(Json_t&& Move)
 	{
 		mStorage = std::move( Move.mStorage );
+		//*this = Value_t(GetStorageString());
 	};
 	
 	Json_t&				operator=(const Json_t& Copy) noexcept
@@ -160,19 +196,8 @@ public:
 	void				Set(std::string_view Key,const std::vector<Json_t>& Values);
 	void				Set(std::string_view Key,const Json_t& Value);	//	change to accept View_t
 	void				PushBack(const Json_t& Value);	//	change to accept View_t
-	
-	//	read interface without requiring storage
-	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetJsonString() );	}
-	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetJsonString() );	}
-	std::string			GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetJsonString() );	}
-
-	bool				HasKey(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::HasKey( Key, GetJsonString() );	}
-
-	//	gr: this does a copy, we want to change this to return a View_t?
-	Json_t				GetValue(std::string_view Key);
 
 private:
-	std::shared_mutex	mStorageLock;
 	std::string_view	GetStorageString()	{	return std::string_view( mStorage.data(), mStorage.size() );	}
 	std::vector<char>	mStorage;
 };

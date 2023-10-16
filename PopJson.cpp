@@ -180,7 +180,7 @@ struct JsonParser final
 	{
         consume_garbage();
         if (i == str.size())
-            throw std::runtime_error("unexpected end of input");
+            throw std::runtime_error("unexpected end of json");
 
         return str[i++];
     }
@@ -728,3 +728,10 @@ PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 	}
 	return Value;
 }
+
+PopJson::Json_t::Json_t(std::string_view Json) :
+	Value_t		( Json )
+{
+	std::copy( Json.begin(), Json.end(), std::back_inserter(mStorage) );
+}
+
