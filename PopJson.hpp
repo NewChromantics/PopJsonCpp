@@ -79,6 +79,12 @@ public:
 		mLength		( Length )
 	{
 	}
+	Value_t(const Value_t& Copy) :
+		mType		( Copy.mType ),
+		mPosition	( Copy.mPosition ),
+		mLength		( Copy.mLength )
+	{
+	}
 
 	ValueType_t::Type	GetType()			{	return mType;	}
 	int					GetInteger(std::string_view JsonData);
@@ -124,6 +130,12 @@ public:
 class PopJson::ViewBase_t : protected Value_t
 {
 public:
+	using Value_t::Value_t;
+	ViewBase_t(const Value_t& Copy) :
+		Value_t	( Copy )
+	{
+	}
+	
 	//	read interface without requiring storage
 	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetStorageString() );	}
 	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetStorageString() );	}
@@ -140,14 +152,19 @@ protected:
 	virtual std::string_view	GetStorageString()=0;
 };
 	
-class PopJson::View_t : protected ViewBase_t
+class PopJson::View_t : public ViewBase_t
 {
 public:
 	View_t(std::string_view Json) :
 		mStorage	( Json )
 	{
 	}
-	
+	View_t(const Value_t& Value,std::string_view Storage) :
+		ViewBase_t	( Value ),
+		mStorage	( Storage )
+	{
+	}
+
 protected:
 	virtual std::string_view	GetStorageString() override	{	return mStorage;	}
 	std::string_view			mStorage;
@@ -155,7 +172,7 @@ protected:
 	
 
 
-class PopJson::Json_t : protected ViewBase_t
+class PopJson::Json_t : public ViewBase_t
 {
 public:
 	Json_t(){};

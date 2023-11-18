@@ -730,8 +730,15 @@ PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 }
 
 PopJson::Json_t::Json_t(std::string_view Json) :
-	Value_t		( Json )
+	ViewBase_t		( Json )
 {
 	std::copy( Json.begin(), Json.end(), std::back_inserter(mStorage) );
 }
 
+PopJson::View_t PopJson::ViewBase_t::GetValue(std::string_view Key)
+{
+	std::shared_lock Lock(mStorageLock);
+	
+	auto Value = Value_t::GetValue( Key, GetStorageString() );
+	return View_t( Value, GetStorageString() );
+}
