@@ -26,6 +26,7 @@ namespace PopJson
 	class ViewBase_t;
 	class View_t;		//	a value, but has a view (temporary) pointer to the underlying data
 	class Json_t;		//	a json is a Value but holds onto its own data and supplys views(values), and becomes writable
+	class ValueProxy_t;	//	to enable a mutable value, this returns an object which calls Set() on a Json_t
 
 	namespace ValueType_t
 	{
@@ -55,6 +56,7 @@ public:
 	Node_t(Value_t Key,Value_t Value);
 	Node_t(Value_t Value);
 	
+	bool				HasKey()			{	return mKeyLength > 0;	}
 	std::string_view	GetKey(std::string_view JsonData);
 	Value_t				GetValue(std::string_view JsonData);
 	
@@ -136,16 +138,24 @@ public:
 	{
 	}
 	
+	
+	//	stringify
+	std::string			GetJsonString();
+	void				GetJsonString(std::stringstream& Json);
+
+
 	//	read interface without requiring storage
 	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetStorageString() );	}
 	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetStorageString() );	}
 	std::string			GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetStorageString() );	}
+	bool				GetBool()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetBool( GetStorageString() );	}
 
 	bool				HasKey(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::HasKey( Key, GetStorageString() );	}
 
 	//	gr: this does a copy, we want to change this to return a View_t?
 	//Value_t				GetValue(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetValue( Key, GetStorageString() );	}
 	View_t				GetValue(std::string_view Key);//	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetValue( Key, GetStorageString() );	}
+	View_t				operator[](std::string_view Key);
 
 protected:
 	std::shared_mutex			mStorageLock;		//	not needed in base class, but makes code a lot easier
@@ -172,11 +182,12 @@ protected:
 	
 
 
+
 class PopJson::Json_t : public ViewBase_t
 {
 public:
 	Json_t(){};
-	Json_t(std::string_view Json);		//	parser
+	Json_t(std::string_view Json);		//	parser but copies the incoming data to become mutable
 	Json_t(const Json_t& Copy)
 	{
 		mStorage = Copy.mStorage;
@@ -201,8 +212,6 @@ public:
 		return *this;
 	}
 
-	std::string			GetJsonString() const;	//	stringify
-	
 	//	write interface
 	void				Set(std::string_view Key,std::string_view Value);
 	void				Set(std::string_view Key,int32_t Value);
@@ -213,8 +222,40 @@ public:
 	void				Set(std::string_view Key,const std::vector<Json_t>& Values);
 	void				Set(std::string_view Key,const Json_t& Value);	//	change to accept View_t
 	void				PushBack(const Json_t& Value);	//	change to accept View_t
+	
+	//	allow [] operator by giving out a mutable value... but might just have to be a proxy to Set()
+	ValueProxy_t		operator[](std::string_view Key);
 
+protected:
+	//	todo: we _could_ store the data here as a raw type (eg. int) and convert during write
+	//			to do that, have additional "non-stringified" value types for int, float, maybe even arrays
+	Node_t				AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type);
+	
 private:
 	std::string_view	GetStorageString()	{	return std::string_view( mStorage.data(), mStorage.size() );	}
 	std::vector<char>	mStorage;
+};
+
+
+
+class PopJson::ValueProxy_t
+{
+	friend class Json_t;
+protected:
+	ValueProxy_t()=delete;
+	ValueProxy_t(Json_t& This,std::string_view Key) :
+		mJson	( This ),
+		mKey	( Key )
+	{
+	}
+
+public:
+	ValueProxy_t&	operator=(std::string_view String)	{	mJson.Set(mKey,String);	return *this;	}
+	ValueProxy_t&	operator=(bool Boolean)				{	mJson.Set(mKey,Boolean);	return *this;	}
+	ValueProxy_t&	operator=(int Integer)				{	mJson.Set(mKey,Integer);	return *this;	}
+	//ValueProxy_t&	operator=(float Float)				{	mJson.Set(mKey,Float);	return *this;	}
+
+private:
+	std::string		mKey;	//	the original caller may hold onto this proxy, but not their initial key in the []operator, so we need a copy
+	Json_t&			mJson;
 };

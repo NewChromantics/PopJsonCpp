@@ -735,6 +735,65 @@ PopJson::Json_t::Json_t(std::string_view Json) :
 	std::copy( Json.begin(), Json.end(), std::back_inserter(mStorage) );
 }
 
+
+PopJson::ValueProxy_t PopJson::Json_t::operator[](std::string_view Key)
+{
+	return ValueProxy_t( *this, Key );
+}
+
+
+//	write interface
+void PopJson::Json_t::Set(std::string_view Key,std::string_view Value)
+{
+	//	write the raw data (without type-encapsulation, ie, no quotes) to our storage
+	//	leave escaping for Writing to Json time too
+	//	then reference it and add to list
+	auto Node = AppendNodeToStorage(Key,Value,ValueType_t::String);
+	mNodes.push_back( Node );
+}
+
+void PopJson::Json_t::Set(std::string_view Key,int32_t Value)
+{
+	auto ValueString = std::to_string(Value);
+	auto Node = AppendNodeToStorage( Key, ValueString, ValueType_t::String );
+	mNodes.push_back( Node );
+}
+
+void PopJson::Json_t::Set(std::string_view Key,bool Value)
+{
+	auto Node = AppendNodeToStorage( Key, "", Value ? ValueType_t::BooleanTrue : ValueType_t::BooleanFalse );
+	mNodes.push_back( Node );
+}
+
+PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type)
+{
+	if ( Key.empty() )
+	{
+		auto ClippedValue = ValueAsString.substr( 0, std::min<int>(ValueAsString.length(),14) );
+		std::stringstream Error;
+		Error << "Cannot write key(" << Key << "=" << ClippedValue << ") with no name. Todo: support null & undefined";
+		throw std::runtime_error(Error.str());
+	}
+	
+	//	todo: validate the node's content by reading back the value
+	
+	Node_t Node;
+	Node.mValueType = Type;
+	
+	Node.mKeyPosition = mStorage.size();
+	Node.mKeyLength = Key.length();
+	std::copy( Key.begin(), Key.end(), std::back_inserter(mStorage) );
+
+	Node.mValuePosition = mStorage.size();
+	Node.mValueLength = ValueAsString.length();
+	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
+	
+	return Node;
+}
+
+
+
+
 PopJson::View_t PopJson::ViewBase_t::GetValue(std::string_view Key)
 {
 	std::shared_lock Lock(mStorageLock);
@@ -742,3 +801,143 @@ PopJson::View_t PopJson::ViewBase_t::GetValue(std::string_view Key)
 	auto Value = Value_t::GetValue( Key, GetStorageString() );
 	return View_t( Value, GetStorageString() );
 }
+
+PopJson::View_t PopJson::ViewBase_t::operator[](std::string_view Key)
+{
+	return GetValue(Key);
+}
+
+std::string PopJson::ViewBase_t::GetJsonString()
+{
+	std::stringstream Json;
+	GetJsonString(Json);
+	return Json.str();
+}
+
+//	https://stackoverflow.com/a/24315631/355753
+void StringReplaceAll(std::string& str,std::string_view from,std::string_view to)
+{
+	size_t start_pos = 0;
+	while((start_pos = str.find(from, start_pos)) != std::string::npos)
+	{
+		str.replace(start_pos, from.length(), to);
+		start_pos += to.length(); // Handles case where 'to' is a substring of 'from'
+	}
+}
+
+
+void StringReplaceAll(std::string& String,char From,std::string_view To)
+{
+	for ( auto i=0;	i<String.size();	i++ )
+	{
+		if ( String[i] == From )
+		{
+			String.replace(i, 1, To);
+			//	dont get stuck in a loop
+			i += To.length()-1;
+		}
+	}
+}
+
+void WriteSanitisedString(std::stringstream& Json,std::string_view Value)
+{
+	auto Contains = [&](char Char)
+	{
+		return Value.find(Char) != std::string_view::npos;
+	};
+	
+	//	sanitise string
+	//	todo: lots of other things like line feeds and tabs should be escaped
+	if ( Contains('\\') || Contains('"') || Contains('\n') || Contains('\t') )
+	{
+		//	gr: probably not the fastest but clean
+		std::string CleanValue(Value);
+		//	escape \ into \\ (BEFORE we escape others!)
+		StringReplaceAll( CleanValue, '\\', "\\\\" );
+		//	escape "
+		StringReplaceAll( CleanValue, '"', "\\\"" );
+		//	convert linefeeds
+		StringReplaceAll( CleanValue, '\n', "\\n" );
+		//	convert tabs
+		StringReplaceAll( CleanValue, '\t', "\\t" );
+
+		Json << CleanValue;
+	}
+	else // safe just use original
+	{
+		Json << Value;
+	}
+}
+
+void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueJsonData)
+{
+	if ( Value.GetType() == PopJson::ValueType_t::BooleanTrue )
+	{
+		Json << "true";
+	}
+	else if ( Value.GetType() == PopJson::ValueType_t::BooleanFalse )
+	{
+		Json << "true";
+	}
+	else if ( Value.GetType() == PopJson::ValueType_t::String )
+	{
+		Json << '"';
+		//	gr: we're extracting a unsanitised string from GetValue
+		//		we should see if it's already sanitised and save the work
+		WriteSanitisedString( Json, Value.GetString(ValueJsonData) );
+		Json << '"';
+	}
+	else
+	{
+		throw std::runtime_error("todo: handle json value type in write");
+	}
+}
+
+
+void WriteSanitisedKey(std::stringstream& Json,std::string_view Key)
+{
+	WriteSanitisedString( Json, Key );
+}
+
+
+void PopJson::ViewBase_t::GetJsonString(std::stringstream& Json)
+{
+	auto JsonStorageData = GetStorageString();
+	
+	auto IsArray = !mChildren.empty();
+	Json << (IsArray ? "[" : "{");
+	
+	//	gr: what to do if we're a mix of children and nodes? shouldn't happen? as nodes should be children with no keys?...
+	for ( auto& Node : mNodes )
+	{
+		if ( Node.HasKey() )
+		{
+			auto Key = Node.GetKey(JsonStorageData);
+			Json << '"';
+			WriteSanitisedKey( Json, Key );
+			Json << '"' << ':';
+		}
+		auto Value = Node.GetValue(JsonStorageData);
+		WriteSanitisedValue( Json, Value, JsonStorageData );
+		Json << ',';
+	}
+	
+	for ( auto& Value : mChildren )
+	{
+		WriteSanitisedValue( Json, Value, JsonStorageData );
+		Json << ',';
+	}
+	
+	//	erase last oxford comma
+	{
+		//	look at last character (move get to back-1)
+		Json.seekg(-1,std::ios_base::end);
+		auto LastChar = Json.peek();
+		//	it is a comma! move the put() to one back to write over it
+		if ( LastChar == ',' )
+			Json.seekp(-1,std::ios_base::end);
+	}
+	
+	Json << (IsArray ? "]" : "}");
+}
+	
