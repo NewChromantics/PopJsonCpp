@@ -774,6 +774,17 @@ void PopJson::Json_t::Set(std::string_view Key,bool Value)
 	mNodes.push_back( Node );
 }
 
+void PopJson::Json_t::PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue)
+{
+	for ( auto& InputValue : Values )
+	{
+		auto WriteValue = WriteStringValue(InputValue);
+		auto Value = AppendValueToStorage( WriteValue, ValueType_t::String );
+		mChildren.push_back(Value);
+	}
+}
+
+
 PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type)
 {
 	if ( Key.empty() )
@@ -800,7 +811,17 @@ PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::s
 	return Node;
 }
 
+PopJson::Value_t PopJson::Json_t::AppendValueToStorage(std::string_view ValueAsString,ValueType_t::Type Type)
+{
+	//	todo: validate the node's content by reading back the value
+	
+	auto Position = mStorage.size();
+	auto Length = ValueAsString.length();
+	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
 
+	Value_t Node( Type, Position, Length );
+	return Node;
+}
 
 
 PopJson::View_t PopJson::ViewBase_t::GetValue(std::string_view Key)

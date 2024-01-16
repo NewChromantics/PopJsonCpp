@@ -230,6 +230,11 @@ public:
 	void				Set(std::string_view Key,const Json_t& Value);	//	change to accept View_t
 	void				PushBack(const Json_t& Value);	//	change to accept View_t
 	
+	//	enable the ability to do an effecient write straight into storage, and easy conversion
+	//	may be able to template this one day...
+	//	this writes an array of strings!
+	void				PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue);
+
 	//	allow [] operator by giving out a mutable value... but might just have to be a proxy to Set()
 	ValueProxy_t		operator[](std::string_view Key);
 
@@ -237,6 +242,7 @@ protected:
 	//	todo: we _could_ store the data here as a raw type (eg. int) and convert during write
 	//			to do that, have additional "non-stringified" value types for int, float, maybe even arrays
 	Node_t				AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type);
+	Value_t				AppendValueToStorage(std::string_view ValueAsString,ValueType_t::Type Type);
 	
 private:
 	std::string_view	GetStorageString()	{	return std::string_view( mStorage.data(), mStorage.size() );	}
@@ -257,6 +263,11 @@ protected:
 	}
 
 public:
+	//	enable the ability to do an effecient write straight into storage, and easy conversion
+	//	may be able to template this one day...
+	//	this writes an array of strings!
+	void			PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue)	{	mJson.PushBack( Values, WriteStringValue );	}
+
 	ValueProxy_t&	operator=(std::string_view String)	{	mJson.Set(mKey,String);	return *this;	}
 	ValueProxy_t&	operator=(bool Boolean)				{	mJson.Set(mKey,Boolean);	return *this;	}
 	ValueProxy_t&	operator=(int Integer)				{	mJson.Set(mKey,Integer);	return *this;	}
