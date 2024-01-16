@@ -87,6 +87,7 @@ public:
 		mLength		( Copy.mLength )
 	{
 	}
+	virtual ~Value_t(){};
 
 	ValueType_t::Type	GetType()			{	return mType;	}
 	int					GetInteger(std::string_view JsonData);
@@ -131,13 +132,18 @@ public:
 
 class PopJson::ViewBase_t : protected Value_t
 {
+	friend class Json_t;	//	allow Json_t access to storage to copy it
+protected:
+	ViewBase_t(const ViewBase_t& Copy) :
+		Value_t	( Copy )
+	{
+	}
 public:
 	using Value_t::Value_t;
 	ViewBase_t(const Value_t& Copy) :
 		Value_t	( Copy )
 	{
 	}
-	
 	
 	//	stringify
 	std::string			GetJsonString();
@@ -188,6 +194,7 @@ class PopJson::Json_t : public ViewBase_t
 public:
 	Json_t(){};
 	Json_t(std::string_view Json);		//	parser but copies the incoming data to become mutable
+	Json_t(ViewBase_t& Copy);
 	Json_t(const Json_t& Copy)
 	{
 		mStorage = Copy.mStorage;

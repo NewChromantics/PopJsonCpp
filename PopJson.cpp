@@ -732,7 +732,16 @@ PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 PopJson::Json_t::Json_t(std::string_view Json) :
 	ViewBase_t		( Json )
 {
+	//	the base class parses the json which is valid, then we copy the data -which will match the map- to our own storage
 	std::copy( Json.begin(), Json.end(), std::back_inserter(mStorage) );
+}
+
+PopJson::Json_t::Json_t(ViewBase_t& Copy) :
+	ViewBase_t		( Copy )
+{
+	//	the base class parses the json which is valid, then we copy the data -which will match the map- to our own storage
+	auto JsonData = Copy.GetStorageString();
+	std::copy( JsonData.begin(), JsonData.end(), std::back_inserter(mStorage) );
 }
 
 
