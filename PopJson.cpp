@@ -1022,7 +1022,7 @@ void PopJson::ViewBase_t::GetJsonString(std::stringstream& Json)
 {
 	auto JsonStorageData = GetStorageString();
 	
-	auto IsArray = !mChildren.empty();
+	auto IsArray = GetType() == ValueType_t::Array; //!mNodes.empty();
 	Json << (IsArray ? "[" : "{");
 	
 	//	gr: what to do if we're a mix of children and nodes? shouldn't happen? as nodes should be children with no keys?...
@@ -1039,13 +1039,7 @@ void PopJson::ViewBase_t::GetJsonString(std::stringstream& Json)
 		WriteSanitisedValue( Json, Value, JsonStorageData );
 		Json << ',';
 	}
-	
-	for ( auto& Value : mChildren )
-	{
-		WriteSanitisedValue( Json, Value, JsonStorageData );
-		Json << ',';
-	}
-	
+
 	//	erase last oxford comma
 	{
 		//	look at last character (move get to back-1)

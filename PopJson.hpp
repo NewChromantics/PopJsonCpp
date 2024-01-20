@@ -150,6 +150,7 @@ public:
 		mType		( Copy.mType ),
 		mPosition	( Copy.mPosition )
 	{
+		mNodes = Copy.mNodes;
 	}
 	virtual ~Value_t(){};
 
@@ -190,14 +191,13 @@ protected:
 	
 public:
 	//	if an array, empty keys
-	std::vector<Node_t>	mNodes;
-	std::vector<Value_t>	mChildren;
+	std::vector<Node_t>		mNodes;
 };
 
 
 
 
-class PopJson::ViewBase_t : protected Value_t
+class PopJson::ViewBase_t : public Value_t
 {
 	friend class Json_t;	//	allow Json_t access to storage to copy it
 protected:
