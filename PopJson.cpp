@@ -1047,7 +1047,7 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 	}
 	else if ( Value.GetType() == PopJson::ValueType_t::BooleanFalse )
 	{
-		Json << "true";
+		Json << "false";
 	}
 	else if ( Value.GetType() == PopJson::ValueType_t::String )
 	{
