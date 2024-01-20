@@ -30,6 +30,14 @@ namespace PopJson
 	class ValueInput_t;
 
 	class Location_t;		//	pos + length of a value or key
+	typedef uint32_t NodeIndex_t;
+	class Map_t;			//	This is a map to every element (MapNode_t) in a json object; it is a tree, but flat. Data is kept elsewhere
+	class MapNode_t;		//	replacement of Value_t
+	class JsonMutable_t;	//	map + storage
+	class JsonReadOnly_t;	//	map + pointer to storage
+	class SliceReadOnly_t;	//	access the map from a point in the subtree
+
+	Map_t	Parse(std::string_view Json);
 
 	namespace ValueType_t
 	{
@@ -68,6 +76,46 @@ public:
 	size_t		mPosition = 0;
 	size_t		mLength = 0;
 };
+
+class PopJson::MapNode_t
+{
+private:
+	constexpr static NodeIndex_t	RootNodeNoParent = 0xffffffff;
+	
+public:
+	bool				HasKey() const			{	return !mKeyPosition.IsEmpty();	}
+	std::string_view	GetKey(std::string_view Storage) const		{	return mKeyPosition.GetContents(Storage);	}
+	ValueType_t::Type	GetType() const			{	return mValueType;	}
+	bool				IsRootNode() const		{	return mParent == RootNodeNoParent;	}
+	NodeIndex_t			GetParentIndex() const	{	return mParent;	}
+
+protected:
+	std::string_view	GetRawValue(std::string_view Storage) const	{	return mValuePosition.GetContents(Storage);	}
+
+private:
+	NodeIndex_t			mParent = RootNodeNoParent;	//	the root node is the only one with no parent. 0 is always the root
+	//	if no key, this object is an element in an array (order dictated by map)
+	Location_t			mKeyPosition;
+	Location_t			mValuePosition;
+	ValueType_t::Type	mValueType = ValueType_t::Null;
+};
+
+class PopJson::Map_t
+{
+public:
+	//	add new node into storage(and tree)
+	NodeIndex_t		AddNode(NodeIndex_t Parent,std::string_view Key,std::string_view RawValue,std::vector<char>& Storage);
+	//	record node into tree
+	NodeIndex_t		AddNode(NodeIndex_t Parent,Location_t Key,Location_t Value,ValueType_t::Type Type);
+
+	std::string		Stringify(std::string_view Storage);
+	
+protected:
+	std::vector<MapNode_t>	mFlatTree;
+};
+
+
+
 class PopJson::Node_t
 {
 public:
