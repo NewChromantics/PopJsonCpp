@@ -127,6 +127,12 @@ public:
 	bool				HasKey()			{	return !mKeyPosition.IsEmpty();	}
 	std::string_view	GetKey(std::string_view JsonData)	{	return mKeyPosition.GetContents(JsonData);	}
 	Value_t				GetValue(std::string_view JsonData);
+	ValueType_t::Type	GetType() const		{	return mValueType;	}
+	void				ReplaceValue(Location_t Value,ValueType_t::Type Type)
+	{
+		mValuePosition = Value;
+		mValueType = Type;
+	}
 	
 public:
 	Location_t			mKeyPosition;
@@ -138,6 +144,7 @@ public:
 class PopJson::Value_t
 {
 	friend class Node_t;
+	friend class Json_t;
 public:
 	Value_t(){}
 	Value_t(std::string_view Json,size_t WritePositionOffset=0);		//	parser
@@ -155,6 +162,9 @@ public:
 	virtual ~Value_t(){};
 
 	ValueType_t::Type	GetType()			{	return mType;	}
+	
+	//	these need storage, so should be protected
+public:
 	int					GetInteger(std::string_view JsonData);
 	double				GetDouble(std::string_view JsonData);
 	float				GetFloat(std::string_view JsonData);
@@ -162,6 +172,7 @@ public:
 	std::string			GetString(std::string_view JsonData);					//	get an escaped string (even if it doesnt need it)
 	bool				GetBool(std::string_view JsonData)	{	return GetBool();	}
 	bool				GetBool();
+	
 
 	//	gr: references... should be protected? when does a user need this to be a reference
 	//		value is abstract enough to be copied
@@ -170,6 +181,7 @@ public:
 
 	bool				HasKey(std::string_view Key,std::string_view JsonData)		{	return GetNode( Key, JsonData, nullptr );	}
 	
+public:
 	//	common helpers
 	void				GetArray(std::vector<int>& Integers);
 	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
@@ -274,6 +286,7 @@ public:
 	ValueInput_t(const std::string& Value);
 	ValueInput_t(std::string_view Value);
 	ValueInput_t(const std::span<std::string_view>& Value);
+	ValueInput_t(const std::span<std::string>& Values);
 
 	//	gr: is there a way to avoid this alloc
 	std::string			mSerialisedValue;

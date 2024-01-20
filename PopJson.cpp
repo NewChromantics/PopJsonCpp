@@ -4,6 +4,8 @@
 #include <sstream>
 
 
+void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueStorage);
+
 
 void PopJson::UnitTest()
 {
@@ -801,7 +803,29 @@ PopJson::ValueInput_t::ValueInput_t(std::string_view Value)
 PopJson::ValueInput_t::ValueInput_t(const std::span<std::string_view>& Value)
 {
 	//	when this writes, it needs to write multiple Value_t's
-	//mSerialisedValue = Value;
+	if ( !Value.empty() )
+		throw std::runtime_error("Serialise values here");
+	mSerialisedValue = "[  ]";
+	mType = ValueType_t::Array;
+}
+
+
+PopJson::ValueInput_t::ValueInput_t(const std::span<std::string>& Values)
+{
+	std::stringstream ArrayValuesSerialised;
+	ArrayValuesSerialised << '[';
+	for ( int i=0;	i<Values.size();	i++ )
+	{
+		if ( i > 0 )
+			ArrayValuesSerialised << ',';
+		
+		auto InputValueString = Values[i];
+		Value_t InputValue( ValueType_t::String, Location_t(0,InputValueString.size()) );
+		WriteSanitisedValue( ArrayValuesSerialised, InputValue, InputValueString );
+	}
+	ArrayValuesSerialised << ']';
+	mSerialisedValue = ArrayValuesSerialised.str();
+	
 	mType = ValueType_t::Array;
 }
 
@@ -840,7 +864,7 @@ void PopJson::Json_t::PushBack(std::span<uint32_t> Values,std::function<std::str
 }
 */
 
-PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type)
+PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type ValueType)
 {
 	if ( Key.empty() )
 	{
@@ -853,13 +877,14 @@ PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::s
 	//	todo: validate the node's content by reading back the value
 	
 	Node_t Node;
-	Node.mValueType = Type;
+	//Node.mValueType = Type;
 	
 	Node.mKeyPosition = Location_t( mStorage.size(), Key.length() );
 	std::copy( Key.begin(), Key.end(), std::back_inserter(mStorage) );
 
-	Node.mValuePosition = Location_t( mStorage.size(), ValueAsString.length() );
-	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
+	auto Value = AppendValueToStorage( ValueAsString, ValueType );
+	Node.mValuePosition = Value.mPosition;
+	Node.mValueType = Value.mType;
 	
 	return Node;
 }
@@ -868,11 +893,26 @@ PopJson::Value_t PopJson::Json_t::AppendValueToStorage(std::string_view ValueAsS
 {
 	//	todo: validate the node's content by reading back the value
 	
-	auto Position = mStorage.size();
-	auto Length = ValueAsString.length();
+	//	temp hack whilst we're re-parsing data
+	if ( Type == ValueType_t::Type::Array )
+	{
+		if ( ValueAsString[0] != '[' || ValueAsString[ValueAsString.size()-1] != ']' )
+		{
+			throw std::runtime_error("Expecting array serialised data to start/end with []");
+		}
+	}
+	
+	Location_t ValuePosition( mStorage.size(), ValueAsString.length() );
 	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
+	
+	//	value doesn't include [] atm
+	if ( Type == ValueType_t::Type::Array )
+	{
+		ValuePosition.mPosition += 1;
+		ValuePosition.mLength -= 2;
+	}
 
-	Value_t Node( Type, Location_t(Position, Length) );
+	Value_t Node( Type, ValuePosition );
 	return Node;
 }
 
@@ -887,8 +927,6 @@ void PopJson::Json_t::PushBack(std::string_view Key,std::span<uint32_t> InputVal
 		Set( Key, std::span<std::string_view>() );
 	}
 	
-	throw std::runtime_error("todo: write PushBack elements");
-/*
 	auto Storage = GetStorageString();
 	
 	auto WriteNewChildrenToNode = [&](Node_t& Node)
@@ -896,19 +934,27 @@ void PopJson::Json_t::PushBack(std::string_view Key,std::span<uint32_t> InputVal
 		if ( Node.GetType() != ValueType_t::Array )
 			throw std::runtime_error("Key already exists and isnt an array");
 
-		for ( auto InputValue : InputValues )
 		{
-			auto ValueString = GetStringValue(InputValue);
-			auto JsonValue = AppendValueToStorage( ValueString, ValueType_t::String );
-			Node.mC
+			auto CurrentValue = Node.GetValue( Storage );
+			if ( !CurrentValue.mNodes.empty() )
+				throw std::runtime_error("todo: append values to existing array");
 		}
 		
-		//	add a new node
-		mJson.PushBack( mKey, Values, WriteStringValue );
+		std::vector<std::string> InputValueStrings;
+		for ( auto& Value : InputValues )
+		{
+			InputValueStrings.push_back( GetStringValue(Value) );
+		}
+		
+		ValueInput_t ArrayValue( InputValueStrings );
+
+		//	add a new node to the root
+		auto ArrayValuesSerialised_str = ArrayValue.mSerialisedValue;
+		auto JsonValue = AppendValueToStorage( ArrayValuesSerialised_str, ValueType_t::Array );
+		Node.ReplaceValue( JsonValue.mPosition, ValueType_t::Array);
 	};
 	
 	GetNode( Key, Storage, WriteNewChildrenToNode );
-	 */
 }
 
 
@@ -987,7 +1033,7 @@ void WriteSanitisedString(std::stringstream& Json,std::string_view Value)
 	}
 }
 
-void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueJsonData)
+void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueStorage)
 {
 	if ( Value.GetType() == PopJson::ValueType_t::BooleanTrue )
 	{
@@ -1002,8 +1048,13 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 		Json << '"';
 		//	gr: we're extracting a unsanitised string from GetValue
 		//		we should see if it's already sanitised and save the work
-		WriteSanitisedString( Json, Value.GetString(ValueJsonData) );
+		WriteSanitisedString( Json, Value.GetString(ValueStorage) );
 		Json << '"';
+	}
+	else if ( Value.GetType() == PopJson::ValueType_t::Array )
+	{
+		auto ArrayContents = Value.GetString(ValueStorage);
+		Json << '[' << ArrayContents << ']';
 	}
 	else
 	{
