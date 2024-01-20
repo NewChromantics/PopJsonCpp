@@ -557,7 +557,13 @@ struct JsonParser final
 			ch = get_next_token();
 			if (ch == ']')
 			{
-				PopJson::Value_t Array( PopJson::ValueType_t::Array, PopJson::Location_t(StartPosition+WritePositionOffset, i) );
+				//	location of array value should not include []
+				auto Start = StartPosition;	//	after [
+				auto Length = i - StartPosition - 1;
+				PopJson::Location_t Location( Start, Length );
+				PopJson::Location_t LocationWithOffset( Start+WritePositionOffset, Length );
+				PopJson::Value_t Array( PopJson::ValueType_t::Array, LocationWithOffset );
+				auto Contents = Location.GetContents( this->str );
 				return Array;
 			}
 
@@ -805,7 +811,7 @@ PopJson::ValueInput_t::ValueInput_t(const std::span<std::string_view>& Value)
 	//	when this writes, it needs to write multiple Value_t's
 	if ( !Value.empty() )
 		throw std::runtime_error("Serialise values here");
-	mSerialisedValue = "[  ]";
+	mSerialisedValue = "[]";
 	mType = ValueType_t::Array;
 }
 
