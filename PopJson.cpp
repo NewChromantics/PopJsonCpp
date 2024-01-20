@@ -232,7 +232,7 @@ struct JsonParser final
 				encode_utf8(last_escaped_codepoint, out);
 				//return out;
 				auto End = i-1;
-				return PopJson::Value_t( PopJson::ValueType_t::String, StartPosition, End-StartPosition );
+				return PopJson::Value_t( PopJson::ValueType_t::String, PopJson::Location_t(StartPosition, End-StartPosition) );
 			}
 
             if (in_range(ch, 0, 0x1f))
@@ -327,7 +327,7 @@ struct JsonParser final
 			if (ch == '"')
 			{
 				auto End = i-1;
-				return PopJson::Value_t( PopJson::ValueType_t::String, StartPosition+WritePositionOffset, End-StartPosition );
+				return PopJson::Value_t( PopJson::ValueType_t::String, PopJson::Location_t(StartPosition+WritePositionOffset, End-StartPosition) );
 			}
 
 			if (in_range(ch, 0, 0x1f))
@@ -418,7 +418,7 @@ struct JsonParser final
 			bool IsExponentChar = str[i] == 'e' || str[i] == 'E';
 			if ( !IsDecimal && !IsExponentChar && (i - start_pos) <= static_cast<size_t>(std::numeric_limits<int>::digits10))
 			{
-				PopJson::Value_t Value( PopJson::ValueType_t::NumberInteger, start_pos + WritePositionOffset, i-start_pos );
+				PopJson::Value_t Value( PopJson::ValueType_t::NumberInteger, PopJson::Location_t(start_pos + WritePositionOffset, i-start_pos) );
 				//return std::atoi(str.c_str() + start_pos);
 				return Value;
 			}
@@ -450,7 +450,7 @@ struct JsonParser final
 				i++;
 		}
 
-		PopJson::Value_t Value( PopJson::ValueType_t::NumberDouble, start_pos + WritePositionOffset, i-start_pos );
+		PopJson::Value_t Value( PopJson::ValueType_t::NumberDouble, PopJson::Location_t(start_pos + WritePositionOffset, i-start_pos) );
 		//return std::strtod(str.c_str() + start_pos, nullptr);
 		return Value;
 	}
@@ -473,7 +473,7 @@ struct JsonParser final
 			throw std::runtime_error("parse error: expected " + std::string(expected) + ", got " + std::string(Slice) );
 		}
 		
-		PopJson::Value_t Result( ResultType, i+WritePositionOffset, expected.length() );
+		PopJson::Value_t Result( ResultType, PopJson::Location_t(i+WritePositionOffset, expected.length()) );
 		i += expected.length();
 		return Result;
 	}
@@ -543,7 +543,7 @@ struct JsonParser final
 			auto ValueStart = StartPosition;
 			auto ValueLength = i-StartPosition-1;
 			auto ValueRaw = str.substr( ValueStart, ValueLength );
-			PopJson::Value_t Object( PopJson::ValueType_t::Object, ValueStart+WritePositionOffset, ValueLength );
+			PopJson::Value_t Object( PopJson::ValueType_t::Object, PopJson::Location_t(ValueStart+WritePositionOffset, ValueLength) );
 			Object.mNodes = std::move(Nodes);
 			return Object;
 		}
@@ -555,7 +555,7 @@ struct JsonParser final
 			ch = get_next_token();
 			if (ch == ']')
 			{
-				PopJson::Value_t Array( PopJson::ValueType_t::Array, StartPosition+WritePositionOffset, i );
+				PopJson::Value_t Array( PopJson::ValueType_t::Array, PopJson::Location_t(StartPosition+WritePositionOffset, i) );
 				return Array;
 			}
 
@@ -582,7 +582,7 @@ struct JsonParser final
 			auto ValueLength = i-StartPosition-1;
 			auto ValueRaw = str.substr( ValueStart, ValueLength );
 			
-			PopJson::Value_t Array( PopJson::ValueType_t::Array, ValueStart+WritePositionOffset, ValueLength );
+			PopJson::Value_t Array( PopJson::ValueType_t::Array, PopJson::Location_t(ValueStart+WritePositionOffset, ValueLength) );
 			Array.mNodes = std::move(Nodes);
 			return Array;
 		}
@@ -640,11 +640,6 @@ bool PopJson::Value_t::GetBool()
 	throw std::runtime_error("todo: conversion of value to bool");
 }
 
-std::string_view PopJson::Value_t::GetRawString(std::string_view JsonData)
-{
-	auto String = JsonData.substr( mPosition, mLength );
-	return String;
-}
 
 
 PopJson::Value_t PopJson::Value_t::GetValue(std::string_view Key,std::string_view JsonData)
@@ -676,42 +671,39 @@ PopJson::Value_t PopJson::Value_t::GetValue(size_t Index,std::string_view JsonDa
 }
 
 
-bool PopJson::Value_t::HasKey(std::string_view Key,std::string_view JsonData)
+
+bool PopJson::Value_t::GetNode(std::string_view Key,std::string_view JsonData,std::function<void(Node_t&)> OnLockedNode)
 {
 	for ( auto& Child : mNodes )
 	{
 		auto ChildKey = Child.GetKey(JsonData);
-		if ( ChildKey == Key )
-			return true;
+		if ( ChildKey != Key )
+			continue;
+		if ( OnLockedNode )
+			OnLockedNode( Child );
+		return true;
 	}
 	return false;
 }
 
 
-std::string_view PopJson::Node_t::GetKey(std::string_view JsonData)
-{
-	return JsonData.substr( mKeyPosition, mKeyLength );
-}
 
 PopJson::Node_t::Node_t(Value_t Key,Value_t Value) :
 	mValuePosition	( Value.mPosition ),
-	mValueLength	( Value.mLength ),
 	mValueType		( Value.mType ),
-	mKeyPosition	( Key.mPosition ),
-	mKeyLength		( Key.mLength )
+	mKeyPosition	( Key.mPosition )
 {
 }
 
 PopJson::Node_t::Node_t(Value_t Value) :
 	mValuePosition	( Value.mPosition ),
-	mValueLength	( Value.mLength ),
 	mValueType		( Value.mType )
 {
 }
 	
 PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 {
-	Value_t Value( mValueType, mValuePosition, mValueLength );
+	Value_t Value( mValueType, mValuePosition );
 
 	//	gr: we've lost all the stuff we've parsed when initially going through the tree
 	//		so we need to re-parse the data...
@@ -721,8 +713,8 @@ PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 		//	these positions don't include start & end tokens...
 		//	which is difficult as they may not be right before & after...
 		//	need to adjust parser to have fake bits/parse a specific content type
-		auto ValueTokenPosition = mValuePosition-1;
-		auto ValueTokenLength = mValueLength+2;
+		auto ValueTokenPosition = mValuePosition.mPosition-1;
+		auto ValueTokenLength = mValuePosition.mLength+2;
 		auto NodeJson = JsonData.substr( ValueTokenPosition, ValueTokenLength );
 		Value = Value_t( NodeJson, ValueTokenPosition );
 	}
@@ -750,7 +742,70 @@ PopJson::ValueProxy_t PopJson::Json_t::operator[](std::string_view Key)
 	return ValueProxy_t( *this, Key );
 }
 
+void PopJson::ValueProxy_t::PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue)
+{
+	mJson.PushBack( mKey, Values, WriteStringValue );
 
+}
+
+void PopJson::Json_t::Set(std::string_view Key,const ValueInput_t& ValueInput)
+{
+	//	write the raw data (without type-encapsulation, ie, no quotes) to our storage
+	//	leave escaping for Writing to Json time too
+	//	then reference it and add to list
+	auto Node = AppendNodeToStorage( Key, ValueInput.mSerialisedValue, ValueInput.mType );
+	mNodes.push_back( Node );
+}
+
+
+PopJson::ValueInput_t::ValueInput_t()
+{
+}
+
+PopJson::ValueInput_t::ValueInput_t(const int& Value)
+{
+	mSerialisedValue = std::to_string(Value);
+	mType = ValueType_t::NumberInteger;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const uint32_t& Value)
+{
+	mSerialisedValue = std::to_string(Value);
+	mType = ValueType_t::NumberInteger;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const bool& Value)
+{
+	mSerialisedValue = Value ? "true" : "false";
+	mType = Value ? ValueType_t::BooleanTrue : ValueType_t::BooleanFalse;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const float& Value)
+{
+	mSerialisedValue = std::to_string(Value);
+	mType = ValueType_t::NumberDouble;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const std::string& Value)
+{
+	mSerialisedValue = Value;
+	mType = ValueType_t::String;
+}
+
+PopJson::ValueInput_t::ValueInput_t(std::string_view Value)
+{
+	mSerialisedValue = Value;
+	mType = ValueType_t::String;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const std::span<std::string_view>& Value)
+{
+	//	when this writes, it needs to write multiple Value_t's
+	//mSerialisedValue = Value;
+	mType = ValueType_t::Array;
+}
+
+/*
 //	write interface
 void PopJson::Json_t::Set(std::string_view Key,std::string_view Value)
 {
@@ -783,7 +838,7 @@ void PopJson::Json_t::PushBack(std::span<uint32_t> Values,std::function<std::str
 		mChildren.push_back(Value);
 	}
 }
-
+*/
 
 PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type)
 {
@@ -800,12 +855,10 @@ PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::s
 	Node_t Node;
 	Node.mValueType = Type;
 	
-	Node.mKeyPosition = mStorage.size();
-	Node.mKeyLength = Key.length();
+	Node.mKeyPosition = Location_t( mStorage.size(), Key.length() );
 	std::copy( Key.begin(), Key.end(), std::back_inserter(mStorage) );
 
-	Node.mValuePosition = mStorage.size();
-	Node.mValueLength = ValueAsString.length();
+	Node.mValuePosition = Location_t( mStorage.size(), ValueAsString.length() );
 	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
 	
 	return Node;
@@ -819,8 +872,43 @@ PopJson::Value_t PopJson::Json_t::AppendValueToStorage(std::string_view ValueAsS
 	auto Length = ValueAsString.length();
 	std::copy( ValueAsString.begin(), ValueAsString.end(), std::back_inserter(mStorage) );
 
-	Value_t Node( Type, Position, Length );
+	Value_t Node( Type, Location_t(Position, Length) );
 	return Node;
+}
+
+void PopJson::Json_t::PushBack(std::string_view Key,std::span<uint32_t> InputValues,std::function<std::string(const uint32_t& Value)> GetStringValue)
+{
+	//	if this is an existing array, we need to append
+	//	if its not a key, make a new one
+	//	if we're trying to append to something else, fail
+	if ( !HasKey(Key) )
+	{
+		//	insert an empty array
+		Set( Key, std::span<std::string_view>() );
+	}
+	
+	throw std::runtime_error("todo: write PushBack elements");
+/*
+	auto Storage = GetStorageString();
+	
+	auto WriteNewChildrenToNode = [&](Node_t& Node)
+	{
+		if ( Node.GetType() != ValueType_t::Array )
+			throw std::runtime_error("Key already exists and isnt an array");
+
+		for ( auto InputValue : InputValues )
+		{
+			auto ValueString = GetStringValue(InputValue);
+			auto JsonValue = AppendValueToStorage( ValueString, ValueType_t::String );
+			Node.mC
+		}
+		
+		//	add a new node
+		mJson.PushBack( mKey, Values, WriteStringValue );
+	};
+	
+	GetNode( Key, Storage, WriteNewChildrenToNode );
+	 */
 }
 
 

@@ -27,6 +27,9 @@ namespace PopJson
 	class View_t;		//	a value, but has a view (temporary) pointer to the underlying data
 	class Json_t;		//	a json is a Value but holds onto its own data and supplys views(values), and becomes writable
 	class ValueProxy_t;	//	to enable a mutable value, this returns an object which calls Set() on a Json_t
+	class ValueInput_t;
+
+	class Location_t;		//	pos + length of a value or key
 
 	namespace ValueType_t
 	{
@@ -48,6 +51,23 @@ namespace PopJson
 }
 
 
+class PopJson::Location_t
+{
+public:
+	Location_t(){};
+	Location_t(size_t Position,size_t Length) :
+		mPosition	( Position ),
+		mLength		( Length )
+	{
+	}
+	
+	bool				IsEmpty() const		{	return mLength==0;	}
+	std::string_view	GetContents(std::string_view Storage) const	{	return Storage.substr( mPosition, mLength );	}
+	
+public:
+	size_t		mPosition = 0;
+	size_t		mLength = 0;
+};
 class PopJson::Node_t
 {
 public:
@@ -56,15 +76,13 @@ public:
 	Node_t(Value_t Key,Value_t Value);
 	Node_t(Value_t Value);
 	
-	bool				HasKey()			{	return mKeyLength > 0;	}
-	std::string_view	GetKey(std::string_view JsonData);
+	bool				HasKey()			{	return !mKeyPosition.IsEmpty();	}
+	std::string_view	GetKey(std::string_view JsonData)	{	return mKeyPosition.GetContents(JsonData);	}
 	Value_t				GetValue(std::string_view JsonData);
 	
 public:
-	size_t		mKeyPosition = 0;
-	size_t		mKeyLength = 0;
-	size_t		mValuePosition = 0;
-	size_t		mValueLength = 0;
+	Location_t			mKeyPosition;
+	Location_t			mValuePosition;
 	ValueType_t::Type	mValueType = ValueType_t::Null;
 };
 
@@ -75,16 +93,14 @@ class PopJson::Value_t
 public:
 	Value_t(){}
 	Value_t(std::string_view Json,size_t WritePositionOffset=0);		//	parser
-	Value_t(ValueType_t::Type Type,size_t Position,size_t Length) :
+	Value_t(ValueType_t::Type Type,Location_t Position) :
 		mType		( Type ),
-		mPosition	( Position ),
-		mLength		( Length )
+		mPosition	( Position )
 	{
 	}
 	Value_t(const Value_t& Copy) :
 		mType		( Copy.mType ),
-		mPosition	( Copy.mPosition ),
-		mLength		( Copy.mLength )
+		mPosition	( Copy.mPosition )
 	{
 	}
 	virtual ~Value_t(){};
@@ -103,7 +119,7 @@ public:
 	Value_t				GetValue(std::string_view Key,std::string_view JsonData);	//	object element
 	Value_t				GetValue(size_t Index,std::string_view JsonData);			//	array element
 
-	bool				HasKey(std::string_view Key,std::string_view JsonData);
+	bool				HasKey(std::string_view Key,std::string_view JsonData)		{	return GetNode( Key, JsonData, nullptr );	}
 	
 	//	common helpers
 	void				GetArray(std::vector<int>& Integers);
@@ -111,15 +127,18 @@ public:
 	std::span<Node_t>	GetChildren()	{	return std::span( mNodes.data(), mNodes.size() );	}
 	size_t				GetChildCount()	{	return mNodes.size();	}
 
+protected:
+	//	returns false if not present
+	bool				GetNode(std::string_view Key,std::string_view JsonData,std::function<void(Node_t&)> OnLockedNode);
+	
 private:
-	std::string_view	GetRawString(std::string_view JsonData);
+	std::string_view	GetRawString(std::string_view JsonData)	{	return mPosition.GetContents(JsonData);	}
 
 private:
 	ValueType_t::Type	mType = ValueType_t::Undefined;
-
+	
 protected:
-	size_t				mPosition = 0;
-	size_t				mLength = 0;
+	Location_t			mPosition;
 	
 public:
 	//	if an array, empty keys
@@ -168,6 +187,10 @@ protected:
 	virtual std::string_view	GetStorageString()=0;
 };
 	
+
+
+
+
 class PopJson::View_t : public ViewBase_t
 {
 public:
@@ -189,8 +212,33 @@ protected:
 
 
 
+
+//	wrapper that abuses the use of implicit conversion to generate json-serialised
+//	string and reduce duplicating function signatures
+class PopJson::ValueInput_t
+{
+public:
+	ValueInput_t();	//	undefined
+	ValueInput_t(const int& Value);
+	ValueInput_t(const uint32_t& Value);
+	ValueInput_t(const bool& Value);
+	ValueInput_t(const float& Value);
+	ValueInput_t(const std::string& Value);
+	ValueInput_t(std::string_view Value);
+	ValueInput_t(const std::span<std::string_view>& Value);
+
+	//	gr: is there a way to avoid this alloc
+	std::string			mSerialisedValue;
+	ValueType_t::Type	mType = ValueType_t::Undefined;
+};
+
+
+
+
+
 class PopJson::Json_t : public ViewBase_t
 {
+	friend class ValueProxy_t;
 public:
 	Json_t(){};
 	Json_t(std::string_view Json);		//	parser but copies the incoming data to become mutable
@@ -220,6 +268,8 @@ public:
 	}
 
 	//	write interface
+	void				Set(std::string_view Key,const ValueInput_t& Value);
+	/*
 	void				Set(std::string_view Key,std::string_view Value);
 	void				Set(std::string_view Key,int32_t Value);
 	void				Set(std::string_view Key,uint32_t Value);
@@ -228,12 +278,16 @@ public:
 	void				Set(std::string_view Key,bool Value);
 	void				Set(std::string_view Key,const std::vector<Json_t>& Values);
 	void				Set(std::string_view Key,const Json_t& Value);	//	change to accept View_t
-	void				PushBack(const Json_t& Value);	//	change to accept View_t
+	void				Set(std::string_view Key,std::span<std::string_view> Values);
+	 */
 	
+	//	push onto this as an array
 	//	enable the ability to do an effecient write straight into storage, and easy conversion
 	//	may be able to template this one day...
 	//	this writes an array of strings!
-	void				PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue);
+	void				PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t& Value)> GetStringValue);
+	void				PushBack(std::string_view Key,std::span<uint32_t> Values,std::function<std::string(const uint32_t& Value)> GetStringValue);
+	//void				PushBack(const Json_t& Value);	//	change to accept View_t
 
 	//	allow [] operator by giving out a mutable value... but might just have to be a proxy to Set()
 	ValueProxy_t		operator[](std::string_view Key);
@@ -243,15 +297,15 @@ protected:
 	//			to do that, have additional "non-stringified" value types for int, float, maybe even arrays
 	Node_t				AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type);
 	Value_t				AppendValueToStorage(std::string_view ValueAsString,ValueType_t::Type Type);
-	
+	virtual std::string_view	GetStorageString() override	{	return std::string_view( mStorage.data(), mStorage.size() );	}
+
 private:
-	std::string_view	GetStorageString()	{	return std::string_view( mStorage.data(), mStorage.size() );	}
 	std::vector<char>	mStorage;
 };
 
 
 
-class PopJson::ValueProxy_t
+class PopJson::ValueProxy_t : public PopJson::ViewBase_t
 {
 	friend class Json_t;
 protected:
@@ -266,13 +320,16 @@ public:
 	//	enable the ability to do an effecient write straight into storage, and easy conversion
 	//	may be able to template this one day...
 	//	this writes an array of strings!
-	void			PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue)	{	mJson.PushBack( Values, WriteStringValue );	}
+	void			PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue);
 
 	ValueProxy_t&	operator=(std::string_view String)	{	mJson.Set(mKey,String);	return *this;	}
 	ValueProxy_t&	operator=(bool Boolean)				{	mJson.Set(mKey,Boolean);	return *this;	}
 	ValueProxy_t&	operator=(int Integer)				{	mJson.Set(mKey,Integer);	return *this;	}
 	//ValueProxy_t&	operator=(float Float)				{	mJson.Set(mKey,Float);	return *this;	}
 
+protected:
+	virtual std::string_view	GetStorageString()		{	return mJson.GetStorageString();	}
+	
 private:
 	std::string		mKey;	//	the original caller may hold onto this proxy, but not their initial key in the []operator, so we need a copy
 	Json_t&			mJson;
