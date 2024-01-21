@@ -306,15 +306,16 @@ public:
 	Json_t(){};
 	Json_t(std::string_view Json);		//	parser but copies the incoming data to become mutable
 	Json_t(ViewBase_t& Copy);
-	Json_t(const Json_t& Copy)
+	Json_t(const Json_t& Copy) :
+		ViewBase_t( Copy )	//	copy map
 	{
 		mStorage = Copy.mStorage;
-		//*this = Value_t(GetStorageString());
 	}
 	Json_t(Json_t&& Move)
+		//ViewBase_t( Copy )
 	{
+		*this = Move;	//	copy map
 		mStorage = std::move( Move.mStorage );
-		//*this = Value_t(GetStorageString());
 	};
 	
 	Json_t&				operator=(const Json_t& Copy) noexcept
