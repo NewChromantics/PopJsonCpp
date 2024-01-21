@@ -70,7 +70,15 @@ public:
 	}
 	
 	bool				IsEmpty() const		{	return mLength==0;	}
-	std::string_view	GetContents(std::string_view Storage) const	{	return Storage.substr( mPosition, mLength );	}
+	std::string_view	GetContents(std::string_view Storage) const	
+	{
+		if ( mPosition < 0 )
+			throw std::runtime_error("invalid pos");
+		if ( mPosition + mLength > Storage.size() )
+			return Storage.substr( mPosition, mLength );
+
+		return Storage.substr( mPosition, mLength );
+	}
 	
 public:
 	size_t		mPosition = 0;
@@ -124,15 +132,11 @@ public:
 	Node_t(Value_t Key,Value_t Value);
 	Node_t(Value_t Value);
 	
-	bool				HasKey()			{	return !mKeyPosition.IsEmpty();	}
+	bool				HasKey() const			{	return !mKeyPosition.IsEmpty();	}
 	std::string_view	GetKey(std::string_view JsonData)	{	return mKeyPosition.GetContents(JsonData);	}
 	Value_t				GetValue(std::string_view JsonData);
 	ValueType_t::Type	GetType() const		{	return mValueType;	}
-	void				ReplaceValue(Location_t Value,ValueType_t::Type Type)
-	{
-		mValuePosition = Value;
-		mValueType = Type;
-	}
+	void				ReplaceValue(Value_t& Value);
 	
 public:
 	Location_t			mKeyPosition;
@@ -161,7 +165,7 @@ public:
 	}
 	virtual ~Value_t(){};
 
-	ValueType_t::Type	GetType()			{	return mType;	}
+	ValueType_t::Type	GetType() const			{	return mType;	}
 	
 	//	these need storage, so should be protected
 public:
@@ -232,7 +236,7 @@ public:
 	}
 	
 	//	stringify
-	std::string			GetJsonString();
+	std::string			GetJsonString() const;
 	void				GetJsonString(std::stringstream& Json);
 
 
@@ -290,6 +294,7 @@ public:
 	ValueInput_t();	//	undefined
 	ValueInput_t(const int& Value);	//	if we revert to just int, be wary of implicit conversion from float etc
 	ValueInput_t(const uint32_t& Value);
+	ValueInput_t(const uint64_t& Value);
 	ValueInput_t(const size_t& Value);	//	32bit && 64bit
 	ValueInput_t(const bool& Value);
 	ValueInput_t(const float& Value);
@@ -297,6 +302,8 @@ public:
 	ValueInput_t(std::string_view Value);
 	ValueInput_t(const std::span<std::string_view>& Value);
 	ValueInput_t(const std::span<std::string>& Values);
+	ValueInput_t(const ViewBase_t& Value);	//	this could be a whole tree, array, object, etc
+	
 
 	//	gr: is there a way to avoid this alloc
 	std::string			mSerialisedValue;
@@ -357,6 +364,7 @@ public:
 	//	enable the ability to do an effecient write straight into storage, and easy conversion
 	//	may be able to template this one day...
 	//	this writes an array of strings!
+	void				PushBack(ViewBase_t& Value);
 	void				PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t& Value)> GetStringValue);
 	void				PushBack(std::string_view Key,std::span<uint32_t> Values,std::function<std::string(const uint32_t& Value)> GetStringValue);
 	//void				PushBack(const Json_t& Value);	//	change to accept View_t
@@ -369,9 +377,17 @@ protected:
 	//			to do that, have additional "non-stringified" value types for int, float, maybe even arrays
 	Node_t				AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type Type);
 	Value_t				AppendValueToStorage(std::string_view ValueAsString,ValueType_t::Type Type);
+
+	//	if we modify our children (mNodes) we may be currently a null, but adding children turns us into an array or object
+	//	check for an invalid mix.
+	//	we MAY be able to just do this at serialisation time, if nothing uses the type...
+	void				UpdateObjectType();
+	
 	virtual std::string_view	GetStorageString() override	{	return std::string_view( mStorage.data(), mStorage.size() );	}
 
 private:
+	ValueType_t::Type	CalculateObjectType() const;
+
 	std::vector<char>	mStorage;
 };
 

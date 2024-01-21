@@ -2,6 +2,7 @@
 #include <string>
 #include <charconv>
 #include <sstream>
+#include <iostream>
 
 
 void WriteEscapedString(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueStorage);
@@ -421,6 +422,8 @@ struct JsonParser final
 
 			auto ValueStart = StartPosition;
 			auto ValueLength = i-StartPosition-1;
+			if ( ValueStart + ValueLength > str.size() )
+				std::cerr << "Read oob" << std::endl;
 			auto ValueRaw = str.substr( ValueStart, ValueLength );
 			PopJson::Value_t Object( PopJson::ValueType_t::Object, PopJson::Location_t(ValueStart+WritePositionOffset, ValueLength) );
 			Object.mNodes = std::move(Nodes);
@@ -616,11 +619,32 @@ PopJson::Value_t PopJson::Node_t::GetValue(std::string_view JsonData)
 		//	need to adjust parser to have fake bits/parse a specific content type
 		auto ValueTokenPosition = mValuePosition.mPosition-1;
 		auto ValueTokenLength = mValuePosition.mLength+2;
-		auto NodeJson = JsonData.substr( ValueTokenPosition, ValueTokenLength );
-		Value = Value_t( NodeJson, ValueTokenPosition );
+		//	missing {} or [] in data
+		if ( ValueTokenPosition + ValueTokenLength > JsonData.size() || ValueTokenLength == 0 )
+		{
+			std::stringstream FixedData;
+			auto ContentData = mValuePosition.GetContents(JsonData);
+			auto IsArray = GetType() == ValueType_t::Array; //!mNodes.empty();
+			FixedData << (IsArray ? "[" : "{");
+			FixedData << ContentData;
+			FixedData << (IsArray ? "]" : "}");
+			Value = Value_t( FixedData.str(), ValueTokenPosition );
+		}
+		else
+		{
+			auto NodeJson = JsonData.substr( ValueTokenPosition, ValueTokenLength );
+			Value = Value_t( NodeJson, ValueTokenPosition );
+		}
 	}
 	return Value;
 }
+
+void PopJson::Node_t::ReplaceValue(Value_t& Value)
+{
+	mValuePosition = Value.mPosition;
+	mValueType = Value.GetType();
+}
+
 
 PopJson::Json_t::Json_t(std::string_view Json) :
 	ViewBase_t		( Json )
@@ -655,7 +679,20 @@ void PopJson::Json_t::Set(std::string_view Key,const ValueInput_t& ValueInput)
 	//	leave escaping for Writing to Json time too
 	//	then reference it and add to list
 	auto Node = AppendNodeToStorage( Key, ValueInput.mSerialisedValue, ValueInput.mType );
+	
+	//	gr: we're putting {} and [] into the storage for the -1+2 hack, but the node doesn't reference it
+	if ( ValueInput.mType == ValueType_t::Array || ValueInput.mType == ValueType_t::Object )
+	{
+		Node.mValuePosition.mPosition += 1;
+		Node.mValuePosition.mLength -= 2;
+	}
+
 	mNodes.push_back( Node );
+	UpdateObjectType();
+	
+	auto Test = this->GetJsonString();
+	static int i =0 ;
+	i++;
 }
 
 
@@ -671,6 +708,16 @@ PopJson::ValueInput_t::ValueInput_t(const int& Value)
 
 PopJson::ValueInput_t::ValueInput_t(const uint32_t& Value)
 {
+	mSerialisedValue = std::to_string(Value);
+	mType = ValueType_t::NumberInteger;
+}
+
+PopJson::ValueInput_t::ValueInput_t(const uint64_t& Value)
+{
+	size_t Max = std::numeric_limits<int32_t>::max();
+	if ( Value > Max )
+		throw std::runtime_error("Trying to write number greater than json 32bit limit");
+	
 	mSerialisedValue = std::to_string(Value);
 	mType = ValueType_t::NumberInteger;
 }
@@ -738,6 +785,12 @@ PopJson::ValueInput_t::ValueInput_t(const std::span<std::string>& Values)
 	mType = ValueType_t::Array;
 }
 
+PopJson::ValueInput_t::ValueInput_t(const ViewBase_t& Value)
+{
+	mType = Value.GetType();
+	mSerialisedValue = Value.GetJsonString();
+}
+
 /*
 //	write interface
 void PopJson::Json_t::Set(std::string_view Key,std::string_view Value)
@@ -772,6 +825,58 @@ void PopJson::Json_t::PushBack(std::span<uint32_t> Values,std::function<std::str
 	}
 }
 */
+
+
+PopJson::ValueType_t::Type PopJson::Json_t::CalculateObjectType() const
+{
+	if ( mNodes.empty() )
+	{
+		//	cannot be null! - this might not be a number
+		//	gr: boolean may have no position...
+		if ( !mPosition.IsEmpty() )
+			return ValueType_t::BooleanTrue;
+		
+		return ValueType_t::Null;
+	}
+	
+	//	evaluate children
+	auto ChildrenWithKeys = 0;
+	for ( auto& Node : mNodes )
+	{
+		if ( Node.HasKey() )
+			ChildrenWithKeys++;
+	}
+	auto ChildrenWithoutKeys = mNodes.size() - ChildrenWithKeys;
+	if ( ChildrenWithKeys > 0 && ChildrenWithoutKeys > 0 )
+		throw std::runtime_error("Json has children with a mix of key and indexed elements. Corrupted");
+	
+	if ( ChildrenWithKeys > 0 )
+		return ValueType_t::Object;
+	
+	return ValueType_t::Array;
+}
+
+void PopJson::Json_t::UpdateObjectType()
+{
+	auto ExpectedType = CalculateObjectType();
+	
+	//	some formats we can change
+	if ( mType == ValueType_t::Null )
+	{
+		if ( mType != ExpectedType )
+		{
+			//std::cerr << "Changing json value type from " << mType << " to " << ExpectedType << std::endl;
+			mType = ExpectedType;
+		}
+		return;
+	}
+
+	if ( mType != ExpectedType )
+	{
+		std::cerr << "Warning, json value type is wrong " << mType << " to " << ExpectedType << std::endl;
+	}
+
+}
 
 PopJson::Node_t PopJson::Json_t::AppendNodeToStorage(std::string_view Key,std::string_view ValueAsString,ValueType_t::Type ValueType)
 {
@@ -825,6 +930,35 @@ PopJson::Value_t PopJson::Json_t::AppendValueToStorage(std::string_view ValueAsS
 	return Node;
 }
 
+
+
+void PopJson::Json_t::PushBack(ViewBase_t& Value)
+{
+	auto Storage = GetStorageString();
+	
+	//	if this is currently null, we can convert it
+	//	now done in UpdateObjectType()
+	//if ( this->GetType() == ValueType_t::Null )
+	//	mType = ValueType_t::Array;
+	
+	if ( this->GetType() != ValueType_t::Array && this->GetType() != ValueType_t::Null )
+		throw std::runtime_error("Trying to append to non-array");
+	
+
+	{
+		//	write to storage, then add to children
+		ValueInput_t ValueInput( Value );
+
+		//	add a new node to the root
+		auto JsonValue = AppendValueToStorage( ValueInput.mSerialisedValue, Value.GetType() );
+		Node_t Node;
+		Node.ReplaceValue( JsonValue );
+		mNodes.push_back( Node );
+		UpdateObjectType();
+	}
+}
+
+
 void PopJson::Json_t::PushBack(std::string_view Key,std::span<uint32_t> InputValues,std::function<std::string(const uint32_t& Value)> GetStringValue)
 {
 	//	if this is an existing array, we need to append
@@ -860,7 +994,7 @@ void PopJson::Json_t::PushBack(std::string_view Key,std::span<uint32_t> InputVal
 		//	add a new node to the root
 		auto ArrayValuesSerialised_str = ArrayValue.mSerialisedValue;
 		auto JsonValue = AppendValueToStorage( ArrayValuesSerialised_str, ValueType_t::Array );
-		Node.ReplaceValue( JsonValue.mPosition, ValueType_t::Array);
+		Node.ReplaceValue( JsonValue );
 	};
 	
 	GetNode( Key, Storage, WriteNewChildrenToNode );
@@ -880,10 +1014,23 @@ PopJson::View_t PopJson::ViewBase_t::operator[](std::string_view Key)
 	return GetValue(Key);
 }
 
-std::string PopJson::ViewBase_t::GetJsonString()
+std::string PopJson::ViewBase_t::GetJsonString() const
 {
 	std::stringstream Json;
-	GetJsonString(Json);
+	
+	try 
+	{
+		//	hack!
+		auto& MutableThis = const_cast<ViewBase_t&>(*this);
+		MutableThis.GetJsonString(Json);
+	}
+	catch (std::exception& e)
+	{
+		std::stringstream Error;
+		Error << "Exception stringifying json; " << e.what();
+		throw std::runtime_error(Error.str());
+	}
+	
 	return Json.str();
 }
 
@@ -1107,6 +1254,11 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 		auto ArrayContents = Value.GetRawString(ValueStorage);
 		Json << '[' << ArrayContents << ']';
 	}
+	else if ( Value.GetType() == PopJson::ValueType_t::Object )
+	{
+		auto ArrayContents = Value.GetRawString(ValueStorage);
+		Json << '{' << ArrayContents << '}';
+	}
 	else
 	{
 		throw std::runtime_error("todo: handle json value type in write");
@@ -1133,11 +1285,13 @@ void PopJson::ViewBase_t::GetJsonString(std::stringstream& Json)
 		if ( Node.HasKey() )
 		{
 			auto Key = Node.GetKey(JsonStorageData);
+			//std::cerr << "writing key " << Key << std::endl;
 			Json << '"';
 			WriteSanitisedKey( Json, Key );
 			Json << '"' << ':';
 		}
 		auto Value = Node.GetValue(JsonStorageData);
+		//std::cerr << "writing Value " << Value.GetRawString(JsonStorageData) << std::endl;
 		WriteSanitisedValue( Json, Value, JsonStorageData );
 		Json << ',';
 	}
