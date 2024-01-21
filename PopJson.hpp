@@ -192,7 +192,7 @@ protected:
 	//	returns false if not present
 	bool				GetNode(std::string_view Key,std::string_view JsonData,std::function<void(Node_t&)> OnLockedNode);
 	
-private:
+public://needs to be private
 	std::string_view	GetRawString(std::string_view JsonData)	{	return mPosition.GetContents(JsonData);	}
 
 private:

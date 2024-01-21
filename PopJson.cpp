@@ -4,7 +4,9 @@
 #include <sstream>
 
 
+void WriteEscapedString(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueStorage);
 void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::string_view ValueStorage);
+std::string UnescapeString(std::string_view EscapedString);
 
 
 void PopJson::UnitTest()
@@ -40,7 +42,7 @@ void PopJson::UnitTest()
 }
 
 
-static inline std::string esc(char c)
+static inline std::string EscapeChar(char c)
 {
 	char buf[12];
 	if (static_cast<uint8_t>(c) >= 0x20 && static_cast<uint8_t>(c) <= 0x7f) {
@@ -71,7 +73,7 @@ static char GetEscapedChar(char SlashChar)
 			break;
 	}
 
-	throw std::runtime_error("invalid escape character " + esc(SlashChar));
+	throw std::runtime_error("invalid escape character " + EscapeChar(SlashChar));
 }
 
 static inline bool in_range(long x, long lower, long upper) {
@@ -187,133 +189,8 @@ struct JsonParser final
         return str[i++];
     }
 
-    /* encode_utf8(pt, out)
-     *
-     * Encode pt as UTF-8 and add it to out.
-     */
-    void encode_utf8(long pt, std::string & out) {
-        if (pt < 0)
-            return;
 
-        if (pt < 0x80) {
-            out += static_cast<char>(pt);
-        } else if (pt < 0x800) {
-            out += static_cast<char>((pt >> 6) | 0xC0);
-            out += static_cast<char>((pt & 0x3F) | 0x80);
-        } else if (pt < 0x10000) {
-            out += static_cast<char>((pt >> 12) | 0xE0);
-            out += static_cast<char>(((pt >> 6) & 0x3F) | 0x80);
-            out += static_cast<char>((pt & 0x3F) | 0x80);
-        } else {
-            out += static_cast<char>((pt >> 18) | 0xF0);
-            out += static_cast<char>(((pt >> 12) & 0x3F) | 0x80);
-            out += static_cast<char>(((pt >> 6) & 0x3F) | 0x80);
-            out += static_cast<char>((pt & 0x3F) | 0x80);
-        }
-    }
-
-    /* parse_string()
-     *
-     * Parse a string, starting at the current position.
-     */
-	PopJson::Value_t parse_string()
-	{
-        std::string out;
-        long last_escaped_codepoint = -1;
-		auto StartPosition = i;
-		
-        while (true)
-		{
-			if (i == str.size())
-				throw std::runtime_error("unexpected end of input in string");
-
-			char ch = str[i++];
-
-			if (ch == '"')
-			{
-				encode_utf8(last_escaped_codepoint, out);
-				//return out;
-				auto End = i-1;
-				return PopJson::Value_t( PopJson::ValueType_t::String, PopJson::Location_t(StartPosition, End-StartPosition) );
-			}
-
-            if (in_range(ch, 0, 0x1f))
-				throw std::runtime_error("unescaped " + esc(ch) + " in string");
-
-            // The usual case: non-escaped characters
-            if (ch != '\\')
-			{
-                encode_utf8(last_escaped_codepoint, out);
-                last_escaped_codepoint = -1;
-                out += ch;
-                continue;
-            }
-
-            // Handle escapes
-            if ( i == str.size() )
-                throw std::runtime_error("unexpected end of input in string");
-
-            ch = str[i++];
-
-            if (ch == 'u')
-			{
-                // Extract 4-byte escape sequence
-                auto esc = str.substr(i, 4);
-                // Explicitly check length of the substring. The following loop
-                // relies on std::string returning the terminating NUL when
-                // accessing str[length]. Checking here reduces brittleness.
-                if (esc.length() < 4)
-					throw std::runtime_error("bad \\u escape: " + std::string(esc));
-
-				for (size_t j = 0; j < 4; j++)
-				{
-					if ( !in_rangeHex(esc[j]) )
-						throw std::runtime_error("bad \\u escape: " + std::string(esc));
-                }
-
-                long codepoint = strtol( std::string(esc).data(), nullptr, 16);
-
-                // JSON specifies that characters outside the BMP shall be encoded as a pair
-                // of 4-hex-digit \u escapes encoding their surrogate pair components. Check
-                // whether we're in the middle of such a beast: the previous codepoint was an
-                // escaped lead (high) surrogate, and this is a trail (low) surrogate.
-                if (in_range(last_escaped_codepoint, 0xD800, 0xDBFF)
-                        && in_range(codepoint, 0xDC00, 0xDFFF)) {
-                    // Reassemble the two surrogate pairs into one astral-plane character, per
-                    // the UTF-16 algorithm.
-                    encode_utf8((((last_escaped_codepoint - 0xD800) << 10)
-                                 | (codepoint - 0xDC00)) + 0x10000, out);
-                    last_escaped_codepoint = -1;
-                } else {
-                    encode_utf8(last_escaped_codepoint, out);
-                    last_escaped_codepoint = codepoint;
-                }
-
-                i += 4;
-                continue;
-            }
-
-            encode_utf8(last_escaped_codepoint, out);
-            last_escaped_codepoint = -1;
-
-            if (ch == 'b') {
-                out += '\b';
-            } else if (ch == 'f') {
-                out += '\f';
-            } else if (ch == 'n') {
-                out += '\n';
-            } else if (ch == 'r') {
-                out += '\r';
-            } else if (ch == 't') {
-                out += '\t';
-            } else if (ch == '"' || ch == '\\' || ch == '/') {
-                out += ch;
-            } else {
-				throw std::runtime_error("invalid escape character " + esc(ch));
-            }
-        }
-    }
-
+	//	this does not decode the string, just finds the end
 	PopJson::Value_t parse_string_faster(size_t WritePositionOffset)
 	{
 		long last_escaped_codepoint = -1;
@@ -333,7 +210,7 @@ struct JsonParser final
 			}
 
 			if (in_range(ch, 0, 0x1f))
-				throw std::runtime_error("unescaped " + esc(ch) + " in string");
+				throw std::runtime_error("unescaped " + EscapeChar(ch) + " in string");
 
 			// The usual case: non-escaped characters
 			if (ch != '\\')
@@ -412,7 +289,7 @@ struct JsonParser final
 		}
 		else
 		{
-			throw std::runtime_error("invalid " + esc(str[i]) + " in number");
+			throw std::runtime_error("invalid " + EscapeChar(str[i]) + " in number");
 		}
 
 		bool IsDecimal = str[i] == '.';
@@ -520,13 +397,13 @@ struct JsonParser final
 				while (1)
 				{
 					if (ch != '"')
-						throw std::runtime_error("expected '\"' in object, got " + esc(ch));
+						throw std::runtime_error("expected '\"' in object, got " + EscapeChar(ch));
 					
 					auto Key = parse_string_faster(WritePositionOffset);
 					
 					ch = get_next_token();
 					if (ch != ':')
-						throw std::runtime_error("expected ':' in object, got " + esc(ch));
+						throw std::runtime_error("expected ':' in object, got " + EscapeChar(ch));
 					
 					auto Value = parse_json( depth + 1, WritePositionOffset );
 					
@@ -536,7 +413,7 @@ struct JsonParser final
 					if (ch == '}')
 						break;
 					if (ch != ',')
-						throw std::runtime_error("expected ',' in object, got " + esc(ch));
+						throw std::runtime_error("expected ',' in object, got " + EscapeChar(ch));
 					
 					ch = get_next_token();
 				}
@@ -581,7 +458,7 @@ struct JsonParser final
 				if (ch == ']')
 					break;
 				if (ch != ',')
-					throw std::runtime_error("expected ',' in list, got " + esc(ch));
+					throw std::runtime_error("expected ',' in list, got " + EscapeChar(ch));
 
 				ch = get_next_token();
 			}
@@ -595,7 +472,7 @@ struct JsonParser final
 			return Array;
 		}
 
-		throw std::runtime_error("expected value, got " + esc(ch));
+		throw std::runtime_error("expected value, got " + EscapeChar(ch));
 	}
 };
 
@@ -611,7 +488,12 @@ PopJson::Value_t::Value_t(std::string_view Json,size_t WritePositionOffset)
 std::string PopJson::Value_t::GetString(std::string_view JsonData)
 {
 	auto EscapedString = GetRawString(JsonData);
-	//	todo: decode escaped
+	if ( mType == ValueType_t::String )
+	{
+		auto DecodedString = UnescapeString( EscapedString );
+		return DecodedString;
+	}
+	//	probably shouldnt be returning a string at all here
 	return std::string(EscapedString);
 }
 
@@ -1020,7 +902,140 @@ void StringReplaceAll(std::string& String,char From,std::string_view To)
 	}
 }
 
-void WriteSanitisedString(std::stringstream& Json,std::string_view Value)
+
+void encode_utf8(long pt, std::string & out)
+{
+	if (pt < 0)
+		return;
+
+	if (pt < 0x80) {
+		out += static_cast<char>(pt);
+	} else if (pt < 0x800) {
+		out += static_cast<char>((pt >> 6) | 0xC0);
+		out += static_cast<char>((pt & 0x3F) | 0x80);
+	} else if (pt < 0x10000) {
+		out += static_cast<char>((pt >> 12) | 0xE0);
+		out += static_cast<char>(((pt >> 6) & 0x3F) | 0x80);
+		out += static_cast<char>((pt & 0x3F) | 0x80);
+	} else {
+		out += static_cast<char>((pt >> 18) | 0xF0);
+		out += static_cast<char>(((pt >> 12) & 0x3F) | 0x80);
+		out += static_cast<char>(((pt >> 6) & 0x3F) | 0x80);
+		out += static_cast<char>((pt & 0x3F) | 0x80);
+	}
+}
+
+char UnescapeChar(char EscapedChar)
+{
+	switch(EscapedChar)
+	{
+		case 'b':	return '\b';
+		case 'f':	return '\f';
+		case 'n':	return '\n';
+		case 'r':	return '\r';
+		case 't':	return '\t';
+		case '"':
+		case '\\':
+		case '/':
+			return EscapedChar;
+		default:
+			throw std::runtime_error("invalid escape character " + EscapeChar(EscapedChar) );
+	}
+}
+
+//	todo: version which returns std::string_view of original, if nothing has changed
+std::string UnescapeString(std::string_view EscapedString)
+{
+	if ( EscapedString.empty() )
+		return {};
+	
+	std::string out;
+	long last_escaped_codepoint = -1;
+
+	int i = 0;
+	auto& str = EscapedString;
+	
+	while (true)
+	{
+		if ( i == str.size() )
+			break;
+
+		char ch = str[i++];
+
+		//	gr: shouldn't get string terminator here
+		if (ch == '"')
+			throw std::runtime_error("Unexpected, unescaped quote in raw string");
+
+		if (in_range(ch, 0, 0x1f))
+			throw std::runtime_error("unescaped " + EscapeChar(ch) + " in string");
+
+		// The usual case: non-escaped characters
+		if (ch != '\\')
+		{
+			encode_utf8(last_escaped_codepoint, out);
+			last_escaped_codepoint = -1;
+			out += ch;
+			continue;
+		}
+
+		// Handle escapes
+		if ( i == str.size() )
+			throw std::runtime_error("unexpected end of input in string");
+
+		ch = str[i++];
+
+		if (ch == 'u')
+		{
+			// Extract 4-byte escape sequence
+			auto esc = str.substr(i, 4);
+			// Explicitly check length of the substring. The following loop
+			// relies on std::string returning the terminating NUL when
+			// accessing str[length]. Checking here reduces brittleness.
+			if (esc.length() < 4)
+				throw std::runtime_error("bad \\u escape: " + std::string(esc));
+
+			for (size_t j = 0; j < 4; j++)
+			{
+				if ( !in_rangeHex(esc[j]) )
+					throw std::runtime_error("bad \\u escape: " + std::string(esc));
+			}
+
+			long codepoint = strtol( std::string(esc).data(), nullptr, 16);
+
+			// JSON specifies that characters outside the BMP shall be encoded as a pair
+			// of 4-hex-digit \u escapes encoding their surrogate pair components. Check
+			// whether we're in the middle of such a beast: the previous codepoint was an
+			// escaped lead (high) surrogate, and this is a trail (low) surrogate.
+			if (in_range(last_escaped_codepoint, 0xD800, 0xDBFF)
+					&& in_range(codepoint, 0xDC00, 0xDFFF)) {
+				// Reassemble the two surrogate pairs into one astral-plane character, per
+				// the UTF-16 algorithm.
+				encode_utf8((((last_escaped_codepoint - 0xD800) << 10)
+							 | (codepoint - 0xDC00)) + 0x10000, out);
+				last_escaped_codepoint = -1;
+			} else {
+				encode_utf8(last_escaped_codepoint, out);
+				last_escaped_codepoint = codepoint;
+			}
+
+			i += 4;
+			continue;
+		}
+
+		encode_utf8(last_escaped_codepoint, out);
+		last_escaped_codepoint = -1;
+
+		out += GetEscapedChar( ch );
+	}
+	
+	//	got an escaped codepoint still pending at end of the string
+	encode_utf8(last_escaped_codepoint, out);
+
+	
+	return out;
+}
+
+void WriteEscapedString(std::stringstream& Json,std::string_view Value)
 {
 	auto Contains = [&](char Char)
 	{
@@ -1065,12 +1080,13 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 		Json << '"';
 		//	gr: we're extracting a unsanitised string from GetValue
 		//		we should see if it's already sanitised and save the work
-		WriteSanitisedString( Json, Value.GetString(ValueStorage) );
+		WriteEscapedString( Json, Value.GetString(ValueStorage) );
 		Json << '"';
 	}
 	else if ( Value.GetType() == PopJson::ValueType_t::Array )
 	{
-		auto ArrayContents = Value.GetString(ValueStorage);
+		//	gr: this needs to iterate contents properly
+		auto ArrayContents = Value.GetRawString(ValueStorage);
 		Json << '[' << ArrayContents << ']';
 	}
 	else
@@ -1082,7 +1098,7 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 
 void WriteSanitisedKey(std::stringstream& Json,std::string_view Key)
 {
-	WriteSanitisedString( Json, Key );
+	WriteEscapedString( Json, Key );
 }
 
 
