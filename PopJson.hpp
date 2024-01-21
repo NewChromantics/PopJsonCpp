@@ -281,8 +281,9 @@ class PopJson::ValueInput_t
 {
 public:
 	ValueInput_t();	//	undefined
-	ValueInput_t(const int& Value);
+	ValueInput_t(const int& Value);	//	if we revert to just int, be wary of implicit conversion from float etc
 	ValueInput_t(const uint32_t& Value);
+	ValueInput_t(const size_t& Value);	//	32bit && 64bit
 	ValueInput_t(const bool& Value);
 	ValueInput_t(const float& Value);
 	ValueInput_t(const std::string& Value);
@@ -386,9 +387,10 @@ public:
 	//	this writes an array of strings!
 	void			PushBack(std::span<uint32_t> Values,std::function<std::string(const uint32_t&)> WriteStringValue);
 
-	ValueProxy_t&	operator=(std::string_view String)	{	mJson.Set(mKey,String);	return *this;	}
-	ValueProxy_t&	operator=(bool Boolean)				{	mJson.Set(mKey,Boolean);	return *this;	}
-	ValueProxy_t&	operator=(int Integer)				{	mJson.Set(mKey,Integer);	return *this;	}
+	ValueProxy_t&	operator=(const ValueInput_t& Value)	{	mJson.Set(mKey,Value);	return *this;	}
+	//ValueProxy_t&	operator=(std::string_view String)	{	mJson.Set(mKey,String);	return *this;	}
+	//ValueProxy_t&	operator=(bool Boolean)				{	mJson.Set(mKey,Boolean);	return *this;	}
+	//ValueProxy_t&	operator=(int Integer)				{	mJson.Set(mKey,Integer);	return *this;	}
 	//ValueProxy_t&	operator=(float Float)				{	mJson.Set(mKey,Float);	return *this;	}
 
 protected:

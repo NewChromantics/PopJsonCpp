@@ -675,6 +675,16 @@ PopJson::ValueInput_t::ValueInput_t(const uint32_t& Value)
 	mType = ValueType_t::NumberInteger;
 }
 
+PopJson::ValueInput_t::ValueInput_t(const size_t& Value)
+{
+	size_t Max = std::numeric_limits<int32_t>::max();
+	if ( Value > Max )
+		throw std::runtime_error("Trying to write number greater than json 32bit limit");
+	
+	mSerialisedValue = std::to_string(Value);
+	mType = ValueType_t::NumberInteger;
+}
+
 PopJson::ValueInput_t::ValueInput_t(const bool& Value)
 {
 	mSerialisedValue = Value ? "true" : "false";
