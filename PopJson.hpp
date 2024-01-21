@@ -165,14 +165,14 @@ public:
 	
 	//	these need storage, so should be protected
 public:
-	int					GetInteger(std::string_view JsonData);
-	double				GetDouble(std::string_view JsonData);
-	float				GetFloat(std::string_view JsonData);
-	std::string_view	GetString(std::string& Buffer,std::string_view JsonData);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
-	std::string			GetString(std::string_view JsonData);					//	get an escaped string (even if it doesnt need it)
-	bool				GetBool(std::string_view JsonData)	{	return GetBool();	}
-	bool				GetBool();
-	
+	int							GetInteger(std::string_view JsonData);
+	double						GetDouble(std::string_view JsonData);
+	float						GetFloat(std::string_view JsonData);
+	std::string_view			GetString(std::string& Buffer,std::string_view JsonData);	//	if the string needs escaping, Buffer will be used and returned. If we can use the raw string, that gets returned
+	std::string					GetString(std::string_view JsonData);					//	get an escaped string (even if it doesnt need it)
+	bool						GetBool(std::string_view JsonData)	{	return GetBool();	}
+	bool						GetBool();
+
 
 	//	gr: references... should be protected? when does a user need this to be a reference
 	//		value is abstract enough to be copied
@@ -183,8 +183,8 @@ public:
 	
 public:
 	//	common helpers
-	void				GetArray(std::vector<int>& Integers);
-	void				GetArray(std::vector<std::string_view>& UnescapedStrings);
+	void				GetArray(std::vector<int>& OutputValues,std::string_view JsonData);
+	void				GetArray(std::vector<std::string>& OutputValues,std::string_view JsonData);
 	std::span<Node_t>	GetChildren()	{	return std::span( mNodes.data(), mNodes.size() );	}
 	size_t				GetChildCount()	{	return mNodes.size();	}
 
@@ -230,10 +230,12 @@ public:
 
 
 	//	read interface without requiring storage
-	int					GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetStorageString() );	}
-	std::string_view	GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetStorageString() );	}
-	std::string			GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetStorageString() );	}
-	bool				GetBool()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetBool( GetStorageString() );	}
+	int							GetInteger()					{	std::shared_lock Lock(mStorageLock);	return Value_t::GetInteger( GetStorageString() );	}
+	std::string_view			GetString(std::string& Buffer)	{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( Buffer, GetStorageString() );	}
+	std::string					GetString()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetString( GetStorageString() );	}
+	bool						GetBool()						{	std::shared_lock Lock(mStorageLock);	return Value_t::GetBool( GetStorageString() );	}
+	void						GetArray(std::vector<std::string>& Values)		{	std::shared_lock Lock(mStorageLock);	return Value_t::GetArray( Values, GetStorageString() );	}
+	std::vector<std::string>	GetStringArray()				{	std::vector<std::string> Values;	GetArray(Values);	return Values;	}
 
 	bool				HasKey(std::string_view Key)	{	std::shared_lock Lock(mStorageLock);	return Value_t::HasKey( Key, GetStorageString() );	}
 

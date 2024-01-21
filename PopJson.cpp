@@ -622,6 +622,17 @@ std::string_view PopJson::Value_t::GetString(std::string& Buffer,std::string_vie
 	return EscapedString;
 }
 
+void PopJson::Value_t::GetArray(std::vector<std::string>& OutputValues,std::string_view JsonData)
+{
+	//	throw if not an array?
+	//if ( this->GetType() != Value)
+	for ( auto& Child : mNodes )
+	{
+		auto Value = Child.GetValue(JsonData);
+		auto ValueString = Value.GetString(JsonData);
+		OutputValues.push_back(ValueString);
+	}
+}
 
 int PopJson::Value_t::GetInteger(std::string_view JsonData)
 {
