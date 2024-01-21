@@ -518,11 +518,11 @@ void PopJson::Value_t::GetArray(std::vector<std::string>& OutputValues,std::stri
 
 int PopJson::Value_t::GetInteger(std::string_view JsonData)
 {
+	auto ValueString = GetRawString( JsonData );
+
 	if ( mType != PopJson::ValueType_t::NumberInteger )
 		throw std::runtime_error("todo: conversion of value to integer");
 	
-	auto ValueString = GetRawString( JsonData );
-
 	int Value = 0;
 	auto result = std::from_chars( ValueString.data(), ValueString.data() + ValueString.size(), Value );
 	if ( result.ec == std::errc::invalid_argument || result.ec == std::errc::result_out_of_range )
@@ -687,7 +687,7 @@ PopJson::ValueInput_t::ValueInput_t(const size_t& Value)
 
 PopJson::ValueInput_t::ValueInput_t(const bool& Value)
 {
-	mSerialisedValue = Value ? "true" : "false";
+	//mSerialisedValue = Value ? "true" : "false";
 	mType = Value ? ValueType_t::BooleanTrue : ValueType_t::BooleanFalse;
 }
 
@@ -1084,6 +1084,14 @@ void WriteSanitisedValue(std::stringstream& Json,PopJson::Value_t Value,std::str
 	else if ( Value.GetType() == PopJson::ValueType_t::BooleanFalse )
 	{
 		Json << "false";
+	}
+	else if ( Value.GetType() == PopJson::ValueType_t::NumberInteger || Value.GetType() == PopJson::ValueType_t::NumberDouble )
+	{
+		Json << Value.GetString(ValueStorage);
+	}
+	else if ( Value.GetType() == PopJson::ValueType_t::Null )
+	{
+		Json << "null";
 	}
 	else if ( Value.GetType() == PopJson::ValueType_t::String )
 	{

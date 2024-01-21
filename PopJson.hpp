@@ -43,7 +43,7 @@ namespace PopJson
 	{
 		enum Type
 		{
-			Undefined,
+			//Undefined,
 			Null,
 			Object,
 			Array,
@@ -196,7 +196,7 @@ public://needs to be private
 	std::string_view	GetRawString(std::string_view JsonData)	{	return mPosition.GetContents(JsonData);	}
 
 private:
-	ValueType_t::Type	mType = ValueType_t::Undefined;
+	ValueType_t::Type	mType = ValueType_t::Null;
 	
 protected:
 	Location_t			mPosition;
@@ -212,10 +212,17 @@ public:
 class PopJson::ViewBase_t : public Value_t
 {
 	friend class Json_t;	//	allow Json_t access to storage to copy it
+	friend class ValueProxy_t;	//	allow ValueProxy to do copy constructor
 protected:
 	ViewBase_t(const ViewBase_t& Copy) :
 		Value_t	( Copy )
 	{
+	}
+	ViewBase_t&	operator=(const ViewBase_t& Copy)
+	{
+		auto& ThisValue = static_cast<Value_t&>(*this);
+		ThisValue = static_cast<const Value_t&>(Copy);
+		return *this;
 	}
 public:
 	using Value_t::Value_t;
@@ -293,7 +300,7 @@ public:
 
 	//	gr: is there a way to avoid this alloc
 	std::string			mSerialisedValue;
-	ValueType_t::Type	mType = ValueType_t::Undefined;
+	ValueType_t::Type	mType = ValueType_t::Null;
 };
 
 
@@ -376,9 +383,18 @@ class PopJson::ValueProxy_t : public PopJson::ViewBase_t
 protected:
 	ValueProxy_t()=delete;
 	ValueProxy_t(Json_t& This,std::string_view Key) :
-		mJson	( This ),
-		mKey	( Key )
+		//ViewBase_t	( This.GetValue(Key) ),	//	copy elements to make this work as a viewbase
+		mJson		( This ),
+		mKey		( Key )
 	{
+		//	copy elements to make this work as a viewbase
+		//	but if this is a new [Element] then the key wont exist
+		if ( This.HasKey(Key) )
+		{
+			auto& ThisViewBase = *static_cast<ViewBase_t*>(this);
+			auto ExistingValue = This.GetValue(Key);
+			ThisViewBase = static_cast<ViewBase_t&>(ExistingValue);
+		}
 	}
 
 public:
